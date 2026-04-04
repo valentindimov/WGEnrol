@@ -3,11 +3,16 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	_ "embed"
 	"flag"
 	"fmt"
 	"net/http"
 	"sync"
+	"text/template"
 )
+
+//go:embed index.html.tpl
+var indexHtmlTemplate string
 
 var stateMutex sync.Mutex
 var numRequests = 0
@@ -21,7 +26,17 @@ func getRoot(responseWriter http.ResponseWriter, request *http.Request) {
 	numRequests++
 
 	fmt.Printf("got / request\n")
-	fmt.Fprintf(responseWriter, "Number of requests: %d\n", numRequests)
+
+	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
+	if err != nil {
+		panic(err)
+	}
+	err = tmpl.Execute(responseWriter, map[string]string{
+		"numRequests": fmt.Sprintf("%d", numRequests),
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func basicAuth(next http.HandlerFunc) http.HandlerFunc {
