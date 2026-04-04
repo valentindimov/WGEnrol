@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"text/template"
 )
@@ -18,29 +19,25 @@ var indexHtmlTemplate string
 var stateMutex sync.Mutex
 var numRequests = 0
 
-var expectedUsername = "admin"
-var expectedPassword = "password"
+func getRoot(tmpl *template.Template) http.HandlerFunc {
+	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		stateMutex.Lock()
+		defer stateMutex.Unlock()
+		numRequests++
 
-func getRoot(responseWriter http.ResponseWriter, request *http.Request) {
-	stateMutex.Lock()
-	defer stateMutex.Unlock()
-	numRequests++
+		log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
 
-	log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
-
-	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = tmpl.Execute(responseWriter, map[string]string{
-		"numRequests": fmt.Sprintf("%d", numRequests),
+		tmplErr := tmpl.Execute(responseWriter, map[string]string{
+			"numRequests": fmt.Sprintf("%d", numRequests),
+		})
+		if tmplErr != nil {
+			http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
+			log.Print(tmplErr)
+		}
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
-func basicAuth(next http.HandlerFunc) http.HandlerFunc {
+func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPassword string) http.HandlerFunc {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		username, password, ok := request.BasicAuth()
 		if ok {
@@ -67,8 +64,22 @@ func main() {
 	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. Creates it if it's missing.")
 	flag.Parse()
 
+	adminUser, adminUserFound := os.LookupEnv("ADMIN_USER")
+	if !adminUserFound {
+		log.Fatal("ADMIN_USER environment variable is required.")
+	}
+	adminPassword, adminPasswordFound := os.LookupEnv("ADMIN_PASSWORD")
+	if !adminPasswordFound {
+		log.Fatal("ADMIN_PASSWORD environment variable is required.")
+	}
+
+	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
-	http.HandleFunc("GET /", basicAuth(getRoot))
+	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl), adminUser, adminPassword))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
