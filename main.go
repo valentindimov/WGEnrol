@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	_ "embed"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -37,14 +38,17 @@ func getRoot(tmpl *template.Template) http.HandlerFunc {
 	})
 }
 
-func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPassword string) http.HandlerFunc {
+func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPasswordSha256 string) http.HandlerFunc {
+	expectedUsernameHash := sha256.Sum256([]byte(expectedUsername))
+	expectedPasswordHash, err := hex.DecodeString(expectedPasswordSha256)
+	if err != nil {
+		log.Fatal(err)
+	}
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		username, password, ok := request.BasicAuth()
 		if ok {
 			usernameHash := sha256.Sum256([]byte(username))
 			passwordHash := sha256.Sum256([]byte(password))
-			expectedUsernameHash := sha256.Sum256([]byte(expectedUsername))
-			expectedPasswordHash := sha256.Sum256([]byte(expectedPassword))
 			usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
 			passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
 			if usernameMatch && passwordMatch {
@@ -68,9 +72,9 @@ func main() {
 	if !adminUserFound {
 		log.Fatal("ADMIN_USER environment variable is required.")
 	}
-	adminPassword, adminPasswordFound := os.LookupEnv("ADMIN_PASSWORD")
+	adminPasswordHash, adminPasswordFound := os.LookupEnv("ADMIN_PASSWORD_HASH")
 	if !adminPasswordFound {
-		log.Fatal("ADMIN_PASSWORD environment variable is required.")
+		log.Fatal("ADMIN_PASSWORD_HASH environment variable is required.")
 	}
 
 	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
@@ -80,6 +84,6 @@ func main() {
 
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
-	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl), adminUser, adminPassword))
+	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
