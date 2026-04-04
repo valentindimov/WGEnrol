@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	_ "embed"
@@ -17,14 +18,11 @@ import (
 //go:embed index.html.tpl
 var indexHtmlTemplate string
 
-var stateMutex sync.Mutex
-var numRequests = 0
-
-func getRoot(tmpl *template.Template) http.HandlerFunc {
+func getRoot(tmpl *template.Template, stateMutex *sync.Mutex, numRequests *int) http.HandlerFunc {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		stateMutex.Lock()
 		defer stateMutex.Unlock()
-		numRequests++
+		*numRequests++
 
 		log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
 
@@ -82,8 +80,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	signingKey := make([]byte, 32)
+	rand.Read(signingKey)
+	stateMutex := sync.Mutex{}
+	numRequests := 0
+
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
-	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl), adminUser, adminPasswordHash))
+	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl, &stateMutex, &numRequests), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
