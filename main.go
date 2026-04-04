@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"flag"
 	"fmt"
 	"net/http"
 	"sync"
@@ -44,7 +45,12 @@ func basicAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
-	http.HandleFunc("/", basicAuth(getRoot))
+	listenOnPtr := flag.String("listen", ":8080", "Address and port to bind on")
+	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. Creates it if it's missing.")
+	flag.Parse()
 
-	http.ListenAndServe("localhost:1234", nil)
+	fmt.Printf("Managing interface %s\n", *ifnamePtr)
+	fmt.Printf("Listening on %s\n", *listenOnPtr)
+	http.HandleFunc("/", basicAuth(getRoot))
+	http.ListenAndServe(*listenOnPtr, nil)
 }
