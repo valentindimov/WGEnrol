@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -89,6 +90,7 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
+
 	wgConf, err := loadWgConf(ctx.ifname)
 	if err != nil {
 		return err
@@ -113,8 +115,31 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 }
 
 // DELETE /peer/{pubkey}
+// pubkey must be encoded as URL-safe base64 (and not the standard Base64 WireGuard keys are usually encoded as)
 func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
-	// TODO
+	pubkeyBase64Url := request.PathValue("pubkey")
+	pubkeyDecoded, err := base64.URLEncoding.DecodeString(pubkeyBase64Url)
+	if err != nil {
+		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+		return nil
+	}
+	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
+
+	wgConf, err := loadWgConf(ctx.ifname)
+	if err != nil {
+		return err
+	}
+	peersMap, err := getPeers(wgConf)
+	if err != nil {
+		return err
+	}
+	delete(peersMap, pubkey)
+	err = saveWgConf(wgConf, ctx.ifname)
+	if err != nil {
+		return err
+	}
+
+	responseWriter.WriteHeader(http.StatusOK)
 	return nil
 }
 
@@ -148,5 +173,6 @@ func listenAndServe(listenOnPtr *string, ifname string, adminUser string, adminP
 
 	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, &ctx), adminUser, adminPasswordHash))
 	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, &ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("DELETE /peer/{pubkey}", basicAuthWrapper(wrapFuncAsHandler(handleDeletePeer, &ctx), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
