@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -15,17 +14,14 @@ import (
 //go:embed index.html.tpl
 var indexHtmlTemplate string
 
-func getRoot(tmpl *template.Template, stateMutex *sync.Mutex, numRequests *int) http.HandlerFunc {
+func handleGetRoot(tmpl *template.Template, stateMutex *sync.Mutex) http.HandlerFunc {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		stateMutex.Lock()
 		defer stateMutex.Unlock()
-		*numRequests++
 
 		log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
 
-		tmplErr := tmpl.Execute(responseWriter, map[string]string{
-			"numRequests": fmt.Sprintf("%d", numRequests),
-		})
+		tmplErr := tmpl.Execute(responseWriter, map[string]string{})
 		if tmplErr != nil {
 			http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
 			log.Print(tmplErr)
@@ -60,13 +56,12 @@ func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPa
 
 func listenAndServe(listenOnPtr *string, adminUser string, adminPasswordHash string) {
 	stateMutex := sync.Mutex{}
-	numRequests := 0
 
 	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl, &stateMutex, &numRequests), adminUser, adminPasswordHash))
+	http.HandleFunc("GET /", basicAuthWrapper(handleGetRoot(tmpl, &stateMutex), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
