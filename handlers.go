@@ -57,3 +57,16 @@ func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPa
 		http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
 	})
 }
+
+func listenAndServe(listenOnPtr *string, adminUser string, adminPasswordHash string) {
+	stateMutex := sync.Mutex{}
+	numRequests := 0
+
+	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl, &stateMutex, &numRequests), adminUser, adminPasswordHash))
+	http.ListenAndServe(*listenOnPtr, nil)
+}

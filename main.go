@@ -1,13 +1,9 @@
 package main
 
 import (
-	"crypto/rand"
 	"flag"
 	"log"
-	"net/http"
 	"os"
-	"sync"
-	"text/template"
 )
 
 func main() {
@@ -24,18 +20,8 @@ func main() {
 		log.Fatal("ADMIN_PASSWORD_HASH environment variable is required.")
 	}
 
-	tmpl, err := template.New("index.html").Parse(indexHtmlTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	signingKey := make([]byte, 32)
-	rand.Read(signingKey)
-	stateMutex := sync.Mutex{}
-	numRequests := 0
-
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
-	http.HandleFunc("GET /", basicAuthWrapper(getRoot(tmpl, &stateMutex, &numRequests), adminUser, adminPasswordHash))
-	http.ListenAndServe(*listenOnPtr, nil)
+
+	listenAndServe(listenOnPtr, adminUser, adminPasswordHash)
 }
