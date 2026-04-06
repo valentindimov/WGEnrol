@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -76,7 +78,37 @@ func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, reque
 
 // PUT /peer
 func handlePutPeers(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
-	// TODO
+	requestBytes, err := io.ReadAll(request.Body)
+	if err != nil {
+		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+		return nil
+	}
+	var requestPeerObj WgPeer
+	err = json.Unmarshal(requestBytes, &requestPeerObj)
+	if err != nil {
+		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+		return nil
+	}
+	wgConf, err := loadWgConf(ctx.ifname)
+	if err != nil {
+		return err
+	}
+	peersMap, err := getPeers(wgConf)
+	if err != nil {
+		return err
+	}
+	if _, ok := peersMap[requestPeerObj.pubkey]; ok {
+		peersMap[requestPeerObj.pubkey] = requestPeerObj
+	} else {
+		http.Error(responseWriter, "Not Found", http.StatusNotFound)
+		return nil
+	}
+	err = saveWgConf(wgConf, ctx.ifname)
+	if err != nil {
+		return err
+	}
+
+	responseWriter.WriteHeader(http.StatusOK)
 	return nil
 }
 
@@ -115,5 +147,6 @@ func listenAndServe(listenOnPtr *string, ifname string, adminUser string, adminP
 	}
 
 	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, &ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handlePutPeers, &ctx), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
