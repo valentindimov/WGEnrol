@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
-	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
@@ -61,12 +60,6 @@ func wrapFuncAsHandler(next func(ctx *ServerContext, w http.ResponseWriter, r *h
 
 // GET /
 func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
-	responseWriter.Header().Set("Content-Type", "text/html")
-	return ctx.indexHtmlTpl.Execute(responseWriter, map[string]string{})
-}
-
-// GET /peers
-func handleGetPeers(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	wgConf, err := loadWgConf(ctx.ifname)
 	if err != nil {
 		return err
@@ -75,40 +68,37 @@ func handleGetPeers(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 	if err != nil {
 		return err
 	}
-	peersMapAsJson, err := json.Marshal(peersMap)
-	if err != nil {
-		return err
-	}
-	responseWriter.Header().Set("Content-Type", "application/json")
-	responseWriter.Write(peersMapAsJson)
-	return nil
+	responseWriter.Header().Set("Content-Type", "text/html")
+	return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
+		"peers": &peersMap,
+	})
 }
 
-// PUT /peers
+// PUT /peer
 func handlePutPeers(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	// TODO
 	return nil
 }
 
-// DELETE /peers/{pubkey}
+// DELETE /peer/{pubkey}
 func handleDeletePeers(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	// TODO
 	return nil
 }
 
-// POST /enrolments
+// POST /enrolment
 func handleCreateEnrolment(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	// TODO
 	return nil
 }
 
-// GET /enrolments/{key}
+// GET /enrolment/{key}
 func handleGetEnrolmentPage(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	// TODO
 	return nil
 }
 
-// POST /enrolments/{key}
+// POST /enrolment/{key}
 func handleEnrolNewPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	// TODO
 	return nil
@@ -125,6 +115,5 @@ func listenAndServe(listenOnPtr *string, ifname string, adminUser string, adminP
 	}
 
 	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, &ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("GET /peers", basicAuthWrapper(wrapFuncAsHandler(handleGetPeers, &ctx), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
