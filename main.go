@@ -23,5 +23,5 @@ func main() {
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
 
-	listenAndServe(listenOnPtr, adminUser, adminPasswordHash)
+	listenAndServe(listenOnPtr, *ifnamePtr, adminUser, adminPasswordHash)
 }

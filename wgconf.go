@@ -14,22 +14,44 @@ type WgPeer struct {
 	comment      string
 }
 
-func loadWgConf(path string) (*ini.File, error) {
+func loadWgConf(ifname string) (*ini.File, error) {
 	options := ini.LoadOptions{
 		AllowNonUniqueSections:     true,
 		AllowShadows:               true,
 		AllowDuplicateShadowValues: true,
 		AllowBooleanKeys:           true,
 	}
-	cfg, err := ini.LoadSources(options, "test.ini")
+	cfg, err := ini.LoadSources(options, fmt.Sprintf("/etc/wireguard/%s.conf", ifname))
 	if err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func saveWgConf(wgConf *ini.File, path string) {
-	wgConf.SaveTo(path)
+func saveWgConf(wgConf *ini.File, ifname string) error {
+	wgConf.SaveTo(fmt.Sprintf("/etc/wireguard/%s.conf", ifname))
+	// The below code is the equivalent of "/usr/bin/wg-quick strip ${ifname} | /usr/bin/wg syncconf ${ifname} /dev/fd/0"
+	/*
+		stripCmd := exec.Command("/usr/bin/wg-quick", "strip", ifname)
+		stripCmdOut, err := stripCmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		syncCmd := exec.Command("/usr/bin/wg", "syncconf", ifname, "/dev/fd/0")
+		syncCmd.Stdin = stripCmdOut
+		syncCmd.Start()
+		stripCmd.Start()
+		errSync := syncCmd.Wait()
+		errStrip := stripCmd.Wait()
+		if errStrip != nil {
+			return errStrip
+		}
+		if errSync != nil {
+			return errSync
+		}
+	*/
+	// All done
+	return nil
 }
 
 func getPeers(wgConf *ini.File) (map[string]WgPeer, error) {
