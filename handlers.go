@@ -77,7 +77,7 @@ func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, reque
 }
 
 // PUT /peer
-func handlePutPeers(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	requestBytes, err := io.ReadAll(request.Body)
 	if err != nil {
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
@@ -113,7 +113,7 @@ func handlePutPeers(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 }
 
 // DELETE /peer/{pubkey}
-func handleDeletePeers(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	// TODO
 	return nil
 }
@@ -147,6 +147,6 @@ func listenAndServe(listenOnPtr *string, ifname string, adminUser string, adminP
 	}
 
 	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, &ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handlePutPeers, &ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, &ctx), adminUser, adminPasswordHash))
 	http.ListenAndServe(*listenOnPtr, nil)
 }
