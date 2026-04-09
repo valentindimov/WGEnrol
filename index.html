@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>BassToonVPN</title>
+<style>
+    *, *::before, *::after {
+        box-sizing: border-box;
+    }
+    *:not(dialog) {
+        margin: 0;
+    }
+    img, picture, video, canvas, svg {
+        display: block;
+        max-width: 100%;
+    }
+    input, button, textarea, select {
+        font: inherit;
+    }
+
+    body {
+        font-family: 'Courier New';
+    }
+    input {
+        field-sizing: content;
+        padding: 3px 5px 3px 5px;
+        min-width: 200px;
+        max-width: 800px;
+    }
+
+    #MainContainer {
+        background-color: #f5f7f7;
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+        flex-flow: column nowrap;
+        align-items: stretch;
+    }
+    #HeaderContainer {
+        background-color: #99dbff;
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 2px solid #759fb6;
+    }
+    #TableContainer {
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: stretch;
+        padding: 5px 20px 0px 20px;
+    }
+    #SearchBoxContainer {
+        display: flex;
+        flex-flow: row nowrap;
+        align-items: stretch;
+        padding: 0px 5px 5px 5px;
+    }
+    button {
+        margin: 0px 5px 0px 5px;
+        padding: 3px;
+    }
+    #SearchBoxSpacer {
+        flex-grow: 1;
+    }
+    #PeersListTable {
+        background-color: #edf4f4;
+        border: 2px outset #808080;
+        border-collapse: separate;
+        border-spacing: 2px;
+        border-style: inset;
+    }
+    #PeersListTable td,th {
+        padding: 5px;
+        text-align: center;
+        vertical-align: center;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+    #PeersListTable tr:not(.hidden):nth-child(odd of .visible) {
+        background-color: #D6EEEE;
+    }
+    #PeersListTable tr.peersListEntry.visible:hover {
+        background-color: #ffecec;
+    }
+    #PeersListTable td.editableField:hover {
+        background-color: #ffffff;
+        cursor: pointer;
+    }
+    dialog {
+        padding: 0px;
+    }
+    dialog div {
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: stretch;
+        padding: 5px;
+    }
+    dialog::backdrop {
+        backdrop-filter: blur(2px) brightness(60%);
+    }
+    .hidden {
+        display: none;
+    }
+</style>
+</head>
+<body>
+<div id="MainContainer">
+    <div id="HeaderContainer">
+        <h1>BassToonVPN</h1>
+    </div>
+    <div id="TableContainer">
+        <div id="SearchBoxContainer">
+            <input type="search" id="PeerSearchBox" />
+            <button id="PeerSearchButton">Search</button>
+            <div id="SearchBoxSpacer"></div>
+            <button id="AddNewPeerButton">Add New</button>
+        </div>
+        <table id="PeersListTable">
+            <tr>
+                <th>Public Key</th>
+                <th>Allowed IPs</th>
+                <th>Name</th>
+                <th></th>
+            </tr>
+            <tr class="peersListEntry visible">
+                <td>S3iYJXuYWR2PLl7vm+lohAc9DOrUIKSqx00P077kNmc=</td>
+                <td class="editableField">192.168.178.0/24,fd13:6101:6fe::/64</td>
+                <td class="editableField">Fritzbox Munich</td>
+                <td><button class="deletePeerButton">Delete</button></td>
+            </tr>
+            <tr class="peersListEntry visible">
+                <td>n6+RsNt/TMeW+0P3mEyhiT5VkL+Yx8G3orMDoeI7dF8=</td>
+                <td class="editableField">192.168.90.0/24,204.168.222.100/32</td>
+                <td class="editableField">Raspi Sofia 1</td>
+                <td><button class="deletePeerButton">Delete</button></td>
+            </tr>
+        </table>
+    </div>
+</div>
+<dialog id="EditFieldDialog">
+    <div>
+        <div>
+            <p>Please specify a value:</p>
+        </div>
+        <div style="flex-direction: row;">
+            <input type="text" id="EditFieldDialogInput" />
+            <button id="EditFieldDialogSaveButton">Save</button>
+        </div>
+    </div>
+</dialog>
+</body>
+<script>
+    // Peer addition
+    document.getElementById("AddNewPeerButton").onclick = function() {
+        // TODO
+        alert("Not implemented yet!");
+    }
+    // Peer editing
+    document.addEventListener("click", function(event) {
+        if (event.target.className == "editableField") {
+            document.getElementById("EditFieldDialogInput").value = event.target.innerText;
+            document.getElementById("EditFieldDialogInput").focus();
+            document.getElementById("EditFieldDialogSaveButton").onclick = function() {
+                // TODO: send the edit request here
+                event.target.innerText = document.getElementById("EditFieldDialogInput").value;
+                document.getElementById("EditFieldDialog").close();
+            }
+            document.getElementById("EditFieldDialog").showModal();
+            event.stopPropagation();
+        }
+    });
+    document.getElementById("EditFieldDialogInput").addEventListener('keydown', function(event) {
+        if (event.keyCode === 13) {
+            event.preventDefault();
+            document.getElementById('EditFieldDialogSaveButton').click();
+        }
+    });
+    // Peer deletion
+    const deleteButtons = document.getElementsByClassName("deletePeerButton");
+    for (let i = 0; i < deleteButtons.length; i++) {
+        button = deleteButtons.item(i);
+        const tableRow = button.parentNode.parentNode;
+        button.onclick = function () {
+            if (window.confirm(`Are you sure you want to delete peer ${tableRow.children[2].innerText}?`)) {
+                // TODO: send delete request
+                tableRow.remove();
+            }
+        }
+    }
+    // Peer search
+    document.getElementById("PeerSearchButton").onclick = function(event) {
+        const searchTerm = document.getElementById("PeerSearchBox").value.toLowerCase();
+        const items = document.getElementsByClassName("peersListEntry");
+        for (let i = 0; i < items.length; i++) {
+            let matches = false;
+            const item = items.item(i);
+            const children = item.children;
+            for (c of children) { 
+                if (c.innerText.toLowerCase().includes(searchTerm)) {
+                    matches = true;
+                    break;
+                }
+            }
+            if (matches) {
+                item.classList.remove("hidden");
+                item.classList.add("visible");
+            } else {
+                item.classList.add("hidden");
+                item.classList.remove("visible");
+            }
+        }
+    };
+    document.getElementById("PeerSearchBox").addEventListener('keydown', function(event) {
+        if (event.keyCode === 13) {
+            event.preventDefault();
+            document.getElementById('PeerSearchButton').click();
+        }
+    });
+</script>
+</html>
