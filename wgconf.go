@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,7 +22,17 @@ func loadWgConf(ifname string) (*ini.File, error) {
 		AllowDuplicateShadowValues: true,
 		AllowBooleanKeys:           true,
 	}
-	cfg, err := ini.LoadSources(options, fmt.Sprintf("/etc/wireguard/%s.conf", ifname))
+	filePath := fmt.Sprintf("/etc/wireguard/%s.conf", ifname)
+	cfg, err := ini.LoadSources(options, filePath)
+	if err != nil {
+		return nil, err
+	}
+	interfaceSection := cfg.Section("Interface")
+	if interfaceSection == nil {
+		return nil, errors.New("No Interface section found in the file.")
+	}
+	interfaceSection.Comment = "# This file is managed automatically.\n# Do not edit it, your changes may get overwritten."
+	err = cfg.SaveTo(filePath)
 	if err != nil {
 		return nil, err
 	}
