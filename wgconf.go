@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	"gopkg.in/ini.v1"
@@ -13,6 +15,38 @@ type WgPeer struct {
 	PresharedKey *string
 	AllowedIps   string
 	Comment      string
+}
+
+func validateWireguardKey(input string) error {
+	decoded, err := base64.StdEncoding.DecodeString(input)
+	if err != nil {
+		return err
+	}
+	if len(decoded) != 32 {
+		return fmt.Errorf("Invalid key: expected 32 bytes long, got %d bytes long.", len(decoded))
+	}
+	return nil
+}
+
+func (peer *WgPeer) validate() error {
+	err := validateWireguardKey(peer.Pubkey)
+	if err != nil {
+		return err
+	}
+	if peer.PresharedKey != nil {
+		err = validateWireguardKey(*peer.PresharedKey)
+		if err != nil {
+			return err
+		}
+	}
+	addrs := strings.Split(peer.AllowedIps, ",")
+	for _, addr := range addrs {
+		_, _, err = net.ParseCIDR(strings.Trim(addr, " "))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type WgConf struct {

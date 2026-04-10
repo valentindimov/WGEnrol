@@ -99,6 +99,12 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
+	err = requestPeerObj.validate()
+	if err != nil {
+		log.Print(err)
+		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+		return nil
+	}
 
 	if _, ok := ctx.confFile.peers[requestPeerObj.Pubkey]; ok {
 		ctx.confFile.peers[requestPeerObj.Pubkey] = requestPeerObj
@@ -125,6 +131,12 @@ func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 	}
 	var requestPeerObj WgPeer
 	err = json.Unmarshal(requestBytes, &requestPeerObj)
+	if err != nil {
+		log.Print(err)
+		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+		return nil
+	}
+	err = requestPeerObj.validate()
 	if err != nil {
 		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
@@ -157,7 +169,6 @@ func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 		return nil
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
-	log.Print(pubkey)
 
 	delete(ctx.confFile.peers, pubkey)
 	err = ctx.confFile.save(ctx.ifname)
