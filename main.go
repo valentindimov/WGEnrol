@@ -9,6 +9,7 @@ import (
 func main() {
 	listenOnPtr := flag.String("listen", ":8080", "Address and port to bind on")
 	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. Creates it if it's missing.")
+	confFilePathPtr := flag.String("conffile", "/etc/wireguard/wg0.conf", "WireGuard interface to manage. Creates it if it's missing.")
 	flag.Parse()
 
 	adminUser, adminUserFound := os.LookupEnv("ADMIN_USER")
@@ -23,5 +24,5 @@ func main() {
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
 
-	listenAndServe(listenOnPtr, *ifnamePtr, adminUser, adminPasswordHash)
+	listenAndServe(listenOnPtr, ifnamePtr, *confFilePathPtr, adminUser, adminPasswordHash)
 }

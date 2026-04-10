@@ -15,14 +15,20 @@ type WgPeer struct {
 	comment      string
 }
 
-func loadWgConf(ifname string) (*ini.File, error) {
+type WgConf struct {
+	filePath string
+	file     *ini.File
+	peers    map[string]WgPeer
+}
+
+func loadWgConf(filePath string) (*WgConf, error) {
+	// Step 1: Load INI file
 	options := ini.LoadOptions{
 		AllowNonUniqueSections:     true,
 		AllowShadows:               true,
 		AllowDuplicateShadowValues: true,
 		AllowBooleanKeys:           true,
 	}
-	filePath := fmt.Sprintf("/etc/wireguard/%s.conf", ifname)
 	cfg, err := ini.LoadSources(options, filePath)
 	if err != nil {
 		return nil, err
@@ -32,45 +38,13 @@ func loadWgConf(ifname string) (*ini.File, error) {
 		return nil, errors.New("No Interface section found in the file.")
 	}
 	interfaceSection.Comment = "# This file is managed automatically.\n# Do not edit it, your changes may get overwritten."
-	err = cfg.SaveTo(filePath)
+
+	// Step 2: load peers from file
+	sections, err := cfg.SectionsByName("Peer")
 	if err != nil {
 		return nil, err
 	}
-	return cfg, nil
-}
-
-func saveWgConf(wgConf *ini.File, ifname string) error {
-	wgConf.SaveTo(fmt.Sprintf("/etc/wireguard/%s.conf", ifname))
-	// The below code is the equivalent of "/usr/bin/wg-quick strip ${ifname} | /usr/bin/wg syncconf ${ifname} /dev/fd/0"
-	/*
-		stripCmd := exec.Command("/usr/bin/wg-quick", "strip", ifname)
-		stripCmdOut, err := stripCmd.StdoutPipe()
-		if err != nil {
-			return err
-		}
-		syncCmd := exec.Command("/usr/bin/wg", "syncconf", ifname, "/dev/fd/0")
-		syncCmd.Stdin = stripCmdOut
-		syncCmd.Start()
-		stripCmd.Start()
-		errSync := syncCmd.Wait()
-		errStrip := stripCmd.Wait()
-		if errStrip != nil {
-			return errStrip
-		}
-		if errSync != nil {
-			return errSync
-		}
-	*/
-	// All done
-	return nil
-}
-
-func getPeers(wgConf *ini.File) (map[string]WgPeer, error) {
-	sections, err := wgConf.SectionsByName("Peer")
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]WgPeer)
+	peersMap := make(map[string]WgPeer)
 	for _, section := range sections {
 		if section.HasKey("PublicKey") {
 			// Extract public key (all peers without one are ignored)
@@ -108,9 +82,8 @@ func getPeers(wgConf *ini.File) (map[string]WgPeer, error) {
 				psk := strings.TrimSpace(val.Value())
 				presharedKey = &psk
 			}
-
 			// Construct the peer object
-			result[pubkey] = WgPeer{
+			peersMap[pubkey] = WgPeer{
 				pubkey:       pubkey,
 				presharedKey: presharedKey,
 				allowedIps:   allowedIPs,
@@ -118,13 +91,25 @@ func getPeers(wgConf *ini.File) (map[string]WgPeer, error) {
 			}
 		}
 	}
-	return result, nil
+
+	// Finally: Write back the file to ensure the warning is displayed, and return
+	err = cfg.SaveTo(filePath)
+	if err != nil {
+		return nil, err
+	}
+	result := WgConf{
+		filePath: filePath,
+		file:     cfg,
+		peers:    peersMap,
+	}
+	return &result, nil
 }
 
-func setPeers(wgConf *ini.File, peers map[string]WgPeer) error {
-	wgConf.DeleteSection("Peer")
-	for _, peer := range peers {
-		sec, err := wgConf.NewSection("Peer")
+func (wgConf *WgConf) save(applyTo *string) error {
+	// Edit the INI file with the contents of the peers map
+	wgConf.file.DeleteSection("Peer")
+	for _, peer := range wgConf.peers {
+		sec, err := wgConf.file.NewSection("Peer")
 		if err != nil {
 			return err
 		}
@@ -143,6 +128,34 @@ func setPeers(wgConf *ini.File, peers map[string]WgPeer) error {
 			}
 		}
 		sec.Comment = fmt.Sprintf("# %s", peer.comment)
+	}
+	// Save the INI file
+	err := wgConf.file.SaveTo(wgConf.filePath)
+	if err != nil {
+		return err
+	}
+	// If requested, apply the new configuration
+	if applyTo != nil {
+		// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
+		/*
+			stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
+			stripCmdOut, err := stripCmd.StdoutPipe()
+			if err != nil {
+				return err
+			}
+			syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/dev/fd/0")
+			syncCmd.Stdin = stripCmdOut
+			syncCmd.Start()
+			stripCmd.Start()
+			errSync := syncCmd.Wait()
+			errStrip := stripCmd.Wait()
+			if errStrip != nil {
+				return errStrip
+			}
+			if errSync != nil {
+				return errSync
+			}
+		*/
 	}
 	return nil
 }

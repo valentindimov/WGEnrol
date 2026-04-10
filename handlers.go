@@ -19,7 +19,8 @@ var indexHtmlTemplate string
 
 type ServerContext struct {
 	stateMutex   *sync.Mutex
-	ifname       string
+	ifname       *string
+	confFile     *WgConf
 	indexHtmlTpl *template.Template
 }
 
@@ -63,17 +64,9 @@ func wrapFuncAsHandler(next func(ctx *ServerContext, w http.ResponseWriter, r *h
 
 // GET /
 func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
-	wgConf, err := loadWgConf(ctx.ifname)
-	if err != nil {
-		return err
-	}
-	peersMap, err := getPeers(wgConf)
-	if err != nil {
-		return err
-	}
 	responseWriter.Header().Set("Content-Type", "text/html")
 	return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
-		"peers": &peersMap,
+		"peers": &ctx.confFile.peers,
 	})
 }
 
@@ -91,21 +84,13 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 		return nil
 	}
 
-	wgConf, err := loadWgConf(ctx.ifname)
-	if err != nil {
-		return err
-	}
-	peersMap, err := getPeers(wgConf)
-	if err != nil {
-		return err
-	}
-	if _, ok := peersMap[requestPeerObj.pubkey]; ok {
-		peersMap[requestPeerObj.pubkey] = requestPeerObj
+	if _, ok := ctx.confFile.peers[requestPeerObj.pubkey]; ok {
+		ctx.confFile.peers[requestPeerObj.pubkey] = requestPeerObj
 	} else {
 		http.Error(responseWriter, "Not Found", http.StatusNotFound)
 		return nil
 	}
-	err = saveWgConf(wgConf, ctx.ifname)
+	err = ctx.confFile.save(ctx.ifname)
 	if err != nil {
 		return err
 	}
@@ -125,16 +110,8 @@ func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
 
-	wgConf, err := loadWgConf(ctx.ifname)
-	if err != nil {
-		return err
-	}
-	peersMap, err := getPeers(wgConf)
-	if err != nil {
-		return err
-	}
-	delete(peersMap, pubkey)
-	err = saveWgConf(wgConf, ctx.ifname)
+	delete(ctx.confFile.peers, pubkey)
+	err = ctx.confFile.save(ctx.ifname)
 	if err != nil {
 		return err
 	}
@@ -161,13 +138,18 @@ func handleEnrolNewPeer(ctx *ServerContext, responseWriter http.ResponseWriter, 
 	return nil
 }
 
-func listenAndServe(listenOnPtr *string, ifname string, adminUser string, adminPasswordHash string) {
+func listenAndServe(listenOnPtr *string, ifname *string, confFilePath string, adminUser string, adminPasswordHash string) {
 	indexHtmlTpl, err := template.New("index.html").Parse(indexHtmlTemplate)
 	if err != nil {
 		log.Fatal(err)
 	}
+	confFile, err := loadWgConf(confFilePath)
+	if confFile == nil || err != nil {
+		log.Fatal(err)
+	}
 	ctx := ServerContext{
 		ifname:       ifname,
+		confFile:     confFile,
 		indexHtmlTpl: indexHtmlTpl,
 	}
 
