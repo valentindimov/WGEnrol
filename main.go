@@ -442,7 +442,7 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	return nil
 }
 
-func listenAndServe(listenOnPtr *string, ifname *string, confFilePath string, adminUser string, adminPasswordHash string) {
+func listenAndServe(listenOnPtr *string, tlscert *string, tlskey *string, ifname *string, confFilePath string, adminUser string, adminPasswordHash string) {
 	indexHtmlTpl, err := template.New("index.html").Parse(indexHtmlTemplate)
 	if err != nil {
 		log.Fatal(err)
@@ -471,14 +471,33 @@ func listenAndServe(listenOnPtr *string, ifname *string, confFilePath string, ad
 	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleGetPeerEnrolmentPage, &ctx))
 	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleEnrolPeer, &ctx))
 
-	http.ListenAndServe(*listenOnPtr, nil)
+	if tlscert != nil && tlskey != nil {
+		err = http.ListenAndServeTLS(*listenOnPtr, *tlscert, *tlskey, nil)
+	} else {
+		err = http.ListenAndServe(*listenOnPtr, nil)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
 	listenOnPtr := flag.String("listen", ":8080", "Address and port to bind on")
-	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. Creates it if it's missing.")
-	confFilePathPtr := flag.String("conffile", "/etc/wireguard/wg0.conf", "WireGuard interface to manage. Creates it if it's missing.")
+	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. It is assumed to already exist.")
+	confFilePathPtr := flag.String("conffile", "/etc/wireguard/wg0.conf", "WireGuard config file to manage. It is assumed to already exist.")
+	tlsCertPathPtr := flag.String("tlscert", "", "Path to TLS certificate (specify only if TLS should be enabled)")
+	tlsKeyPathPtr := flag.String("tlskey", "", "Path to TLS certificate (specify only if TLS should be enabled)")
 	flag.Parse()
+
+	if len(*tlsCertPathPtr) == 0 {
+		tlsCertPathPtr = nil
+	}
+	if len(*tlsKeyPathPtr) == 0 {
+		tlsCertPathPtr = nil
+	}
+	if (tlsKeyPathPtr == nil) != (tlsCertPathPtr == nil) {
+		log.Fatal("-tlscert and -tlskey must both be specified if TLS should be used.")
+	}
 
 	adminUser, adminUserFound := os.LookupEnv("ADMIN_USER")
 	if !adminUserFound {
@@ -492,5 +511,5 @@ func main() {
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
 
-	listenAndServe(listenOnPtr, ifnamePtr, *confFilePathPtr, adminUser, adminPasswordHash)
+	listenAndServe(listenOnPtr, tlsCertPathPtr, tlsKeyPathPtr, ifnamePtr, *confFilePathPtr, adminUser, adminPasswordHash)
 }
