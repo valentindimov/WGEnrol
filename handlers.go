@@ -95,6 +95,7 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 	var requestPeerObj WgPeer
 	err = json.Unmarshal(requestBytes, &requestPeerObj)
 	if err != nil {
+		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
@@ -118,12 +119,14 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	requestBytes, err := io.ReadAll(request.Body)
 	if err != nil {
+		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
 	var requestPeerObj WgPeer
 	err = json.Unmarshal(requestBytes, &requestPeerObj)
 	if err != nil {
+		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
@@ -147,12 +150,14 @@ func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 // pubkey must be encoded as URL-safe base64 (and not the standard Base64 WireGuard keys are usually encoded as)
 func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	pubkeyBase64Url := request.PathValue("pubkey")
-	pubkeyDecoded, err := base64.URLEncoding.DecodeString(pubkeyBase64Url)
+	pubkeyDecoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyBase64Url)
 	if err != nil {
+		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
+	log.Print(pubkey)
 
 	delete(ctx.confFile.peers, pubkey)
 	err = ctx.confFile.save(ctx.ifname)
@@ -167,8 +172,9 @@ func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 // GET /peer/{pubkeyPreimage}
 func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	pubkeyPreimageBase64Url := request.PathValue("pubkeyPreimage")
-	pubkeyPreimageDecoded, err := base64.URLEncoding.DecodeString(pubkeyPreimageBase64Url)
+	pubkeyPreimageDecoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if err != nil {
+		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
@@ -190,8 +196,9 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 // PUT /peer/{pubkeyPreimage}
 func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	pubkeyPreimageBase64Url := request.PathValue("pubkeyPreimage")
-	pubkeyPreimageDecoded, err := base64.URLEncoding.DecodeString(pubkeyPreimageBase64Url)
+	pubkeyPreimageDecoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if err != nil {
+		log.Print(err)
 		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 		return nil
 	}
@@ -206,19 +213,21 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	if _, ok := ctx.confFile.peers[pubkey]; ok {
 		requestBytes, err := io.ReadAll(request.Body)
 		if err != nil || len(requestBytes) != 32 {
+			log.Print(err)
 			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 			return nil
 		}
 		var requestObj SetPeerPubkeyRequest
 		err = json.Unmarshal(requestBytes, &requestObj)
 		if err != nil {
+			log.Print(err)
 			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 			return nil
 		}
 		peerObj := ctx.confFile.peers[pubkey]
 		delete(ctx.confFile.peers, pubkey)
 		peerObj.Pubkey = requestObj.newPubKey
-		peerObj.presharedKey = requestObj.newPSK
+		peerObj.PresharedKey = requestObj.newPSK
 		ctx.confFile.peers[requestObj.newPubKey] = peerObj
 		err = ctx.confFile.save(ctx.ifname)
 		if err != nil {

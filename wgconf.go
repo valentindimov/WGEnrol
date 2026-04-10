@@ -10,7 +10,7 @@ import (
 
 type WgPeer struct {
 	Pubkey       string
-	presharedKey *string
+	PresharedKey *string
 	AllowedIps   string
 	Comment      string
 }
@@ -40,50 +40,49 @@ func loadWgConf(filePath string) (*WgConf, error) {
 	interfaceSection.Comment = "# This file is managed automatically.\n# Do not edit it, your changes may get overwritten."
 
 	// Step 2: load peers from file
-	sections, err := cfg.SectionsByName("Peer")
-	if err != nil {
-		return nil, err
-	}
 	peersMap := make(map[string]WgPeer)
-	for _, section := range sections {
-		if section.HasKey("PublicKey") {
-			// Extract public key (all peers without one are ignored)
-			val, err := section.GetKey("PublicKey")
-			if err != nil {
-				return nil, err
-			}
-			pubkey := val.Value()
-			// Extract comment, make sure to strip the leading comment characters
-			comment := section.Comment
-			if strings.HasPrefix(comment, "#") || strings.HasPrefix(comment, ";") {
-				comment = comment[1:]
-			}
-			comment = strings.TrimSpace(comment)
-			// Extract AllowedIPs. This can be missing, in which case it's an empty list.
-			allowedIPs := ""
-			if section.HasKey("AllowedIPs") {
-				val, err = section.GetKey("AllowedIPs")
+	sections, err := cfg.SectionsByName("Peer")
+	if err == nil && sections != nil {
+		for _, section := range sections {
+			if section.HasKey("PublicKey") {
+				// Extract public key (all peers without one are ignored)
+				val, err := section.GetKey("PublicKey")
 				if err != nil {
 					return nil, err
 				}
-				allowedIPs = strings.TrimSpace(val.Value())
-			}
-			// If the peer has a PresharedKey, read that too
-			var presharedKey *string
-			if section.HasKey("PresharedKey") {
-				val, err = section.GetKey("PresharedKey")
-				if err != nil {
-					return nil, err
+				pubkey := val.Value()
+				// Extract comment, make sure to strip the leading comment characters
+				comment := section.Comment
+				if strings.HasPrefix(comment, "#") || strings.HasPrefix(comment, ";") {
+					comment = comment[1:]
 				}
-				psk := strings.TrimSpace(val.Value())
-				presharedKey = &psk
-			}
-			// Construct the peer object
-			peersMap[pubkey] = WgPeer{
-				Pubkey:       pubkey,
-				presharedKey: presharedKey,
-				AllowedIps:   allowedIPs,
-				Comment:      comment,
+				comment = strings.TrimSpace(comment)
+				// Extract AllowedIPs. This can be missing, in which case it's an empty list.
+				allowedIPs := ""
+				if section.HasKey("AllowedIPs") {
+					val, err = section.GetKey("AllowedIPs")
+					if err != nil {
+						return nil, err
+					}
+					allowedIPs = strings.TrimSpace(val.Value())
+				}
+				// If the peer has a PresharedKey, read that too
+				var presharedKey *string
+				if section.HasKey("PresharedKey") {
+					val, err = section.GetKey("PresharedKey")
+					if err != nil {
+						return nil, err
+					}
+					psk := strings.TrimSpace(val.Value())
+					presharedKey = &psk
+				}
+				// Construct the peer object
+				peersMap[pubkey] = WgPeer{
+					Pubkey:       pubkey,
+					PresharedKey: presharedKey,
+					AllowedIps:   allowedIPs,
+					Comment:      comment,
+				}
 			}
 		}
 	}
@@ -117,8 +116,8 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		if err != nil {
 			return err
 		}
-		if peer.presharedKey != nil {
-			_, err = sec.NewKey("PresharedKey", *peer.presharedKey)
+		if peer.PresharedKey != nil {
+			_, err = sec.NewKey("PresharedKey", *peer.PresharedKey)
 			if err != nil {
 				return err
 			}
