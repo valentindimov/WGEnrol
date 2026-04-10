@@ -123,18 +123,14 @@
                 <th>Name</th>
                 <th></th>
             </tr>
+            {{ range .peers }}
             <tr class="peersListEntry visible">
-                <td>S3iYJXuYWR2PLl7vm+lohAc9DOrUIKSqx00P077kNmc=</td>
-                <td class="editableField">192.168.178.0/24,fd13:6101:6fe::/64</td>
-                <td class="editableField">Fritzbox Munich</td>
+                <td class="editableField">{{ .comment }}</td>
+                <td class="editableField">{{ .allowedIps }}</td>
+                <td>{{ .pubkey }}</td>
                 <td><button class="deletePeerButton">Delete</button></td>
             </tr>
-            <tr class="peersListEntry visible">
-                <td>n6+RsNt/TMeW+0P3mEyhiT5VkL+Yx8G3orMDoeI7dF8=</td>
-                <td class="editableField">192.168.90.0/24,204.168.222.100/32</td>
-                <td class="editableField">Raspi Sofia 1</td>
-                <td><button class="deletePeerButton">Delete</button></td>
-            </tr>
+            {{ end }}
         </table>
     </div>
 </div>
@@ -149,12 +145,57 @@
         </div>
     </div>
 </dialog>
+<dialog id="AddPeerDialog">
+    <div>
+        <div>
+            <p>Specify the new peer's parameters:</p>
+        </div>
+        <div style="flex-direction: row;">
+            <table>
+                <tr>
+                    <th scope="col">Peer Name:</th>
+                    <td><input type="text" id="AddPeerDialogNameInput" /></td>
+                </tr>
+                <tr>
+                    <th scope="col">Allowed IPs: </th>
+                    <td><input type="text" id="AddPeerDialogIPInput" /></td>
+                </tr>
+            </table>
+        </div>
+        <div style="flex-direction: column;">
+            <span>Send the following registration link to the client:</span>
+            <a id="AddPeerDialogRegistrationLink"></a>
+            <span><b>You cannot get this link again after closing this dialog!</b></span>
+        </div>
+        <div style="flex-direction: row;">
+            <button id="AddPeerDialogSaveButton">Save</button>
+            <button id="AddPeerDialogCancelButton">Cancel</button>
+        </div>
+    </div>
+</dialog>
 </body>
 <script>
     // Peer addition
-    document.getElementById("AddNewPeerButton").onclick = function() {
-        // TODO
-        alert("Not implemented yet!");
+    document.getElementById("AddNewPeerButton").onclick = async function() {
+        let preimage = new Uint8Array(32)
+        window.crypto.getRandomValues(preimage)
+        pubkey = await window.crypto.subtle.digest("SHA-256", preimage)
+        registrationLink = `${window.location.href}/peer/${preimage.toBase64({"alphabet": "base64url", "omitPadding": true})}`
+        document.getElementById("AddPeerDialogNameInput").value = "";
+        document.getElementById("AddPeerDialogIPInput").value = "";
+        document.getElementById("AddPeerDialogRegistrationLink").href = registrationLink;
+        document.getElementById("AddPeerDialogRegistrationLink").innerText = registrationLink;
+        document.getElementById("AddPeerDialogNameInput").focus();
+        document.getElementById("AddPeerDialogSaveButton").onclick = function() {
+            // TODO: send the creation request here
+            document.getElementById("AddPeerDialog").close();
+            window.location.reload();
+        }
+        document.getElementById("AddPeerDialogCancelButton").onclick = function() {
+            document.getElementById("AddPeerDialog").close();
+        }
+        document.getElementById("AddPeerDialog").showModal();
+        event.stopPropagation();
     }
     // Peer editing
     document.addEventListener("click", function(event) {
@@ -182,7 +223,7 @@
         button = deleteButtons.item(i);
         const tableRow = button.parentNode.parentNode;
         button.onclick = function () {
-            if (window.confirm(`Are you sure you want to delete peer ${tableRow.children[2].innerText}?`)) {
+            if (window.confirm(`Are you sure you want to delete peer ${tableRow.children[0].innerText}?`)) {
                 // TODO: send delete request
                 tableRow.remove();
             }

@@ -11,7 +11,7 @@ import (
 type WgPeer struct {
 	pubkey       string
 	presharedKey *string
-	allowedIps   []string
+	allowedIps   string
 	comment      string
 }
 
@@ -60,17 +60,13 @@ func loadWgConf(filePath string) (*WgConf, error) {
 			}
 			comment = strings.TrimSpace(comment)
 			// Extract AllowedIPs. This can be missing, in which case it's an empty list.
-			allowedIPsStr := ""
+			allowedIPs := ""
 			if section.HasKey("AllowedIPs") {
 				val, err = section.GetKey("AllowedIPs")
 				if err != nil {
 					return nil, err
 				}
-				allowedIPsStr = strings.TrimSpace(val.Value())
-			}
-			allowedIPs := strings.Split(allowedIPsStr, ",")
-			for index, ipStr := range allowedIPs {
-				allowedIPs[index] = strings.TrimSpace(ipStr)
+				allowedIPs = strings.TrimSpace(val.Value())
 			}
 			// If the peer has a PresharedKey, read that too
 			var presharedKey *string
@@ -117,7 +113,7 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		if err != nil {
 			return err
 		}
-		_, err = sec.NewKey("AllowedIPs", strings.Join(peer.allowedIps, ","))
+		_, err = sec.NewKey("AllowedIPs", peer.allowedIps)
 		if err != nil {
 			return err
 		}

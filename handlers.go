@@ -10,14 +10,15 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"sync"
 	"text/template"
 )
 
-//go:embed index.html.tpl
+//go:embed index.html
 var indexHtmlTemplate string
 
-//go:embed enrolment.html.tpl
+//go:embed enrolment.html
 var enrolmentHtmlTemplate string
 
 type ServerContext struct {
@@ -74,8 +75,13 @@ func wrapFuncAsHandler(next func(ctx *ServerContext, w http.ResponseWriter, r *h
 // GET /
 func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	responseWriter.Header().Set("Content-Type", "text/html")
+	var sortedPeersList []WgPeer
+	for _, peer := range ctx.confFile.peers {
+		sortedPeersList = append(sortedPeersList, peer)
+	}
+	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].comment > sortedPeersList[j].comment })
 	return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
-		"peers": &ctx.confFile.peers,
+		"peers": sortedPeersList,
 	})
 }
 
