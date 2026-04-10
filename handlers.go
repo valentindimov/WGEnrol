@@ -22,7 +22,7 @@ var indexHtmlTemplate string
 var enrolmentHtmlTemplate string
 
 type ServerContext struct {
-	stateMutex       *sync.Mutex
+	stateMutex       sync.Mutex
 	ifname           *string
 	confFile         *WgConf
 	indexHtmlTpl     *template.Template
@@ -79,7 +79,7 @@ func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, reque
 	for _, peer := range ctx.confFile.peers {
 		sortedPeersList = append(sortedPeersList, peer)
 	}
-	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].comment > sortedPeersList[j].comment })
+	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
 	return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
 		"peers": sortedPeersList,
 	})
@@ -99,8 +99,8 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 		return nil
 	}
 
-	if _, ok := ctx.confFile.peers[requestPeerObj.pubkey]; ok {
-		ctx.confFile.peers[requestPeerObj.pubkey] = requestPeerObj
+	if _, ok := ctx.confFile.peers[requestPeerObj.Pubkey]; ok {
+		ctx.confFile.peers[requestPeerObj.Pubkey] = requestPeerObj
 	} else {
 		http.Error(responseWriter, "Not Found", http.StatusNotFound)
 		return nil
@@ -128,11 +128,11 @@ func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 		return nil
 	}
 
-	if _, ok := ctx.confFile.peers[requestPeerObj.pubkey]; ok {
+	if _, ok := ctx.confFile.peers[requestPeerObj.Pubkey]; ok {
 		http.Error(responseWriter, "Peer already exists", http.StatusBadRequest)
 		return nil
 	} else {
-		ctx.confFile.peers[requestPeerObj.pubkey] = requestPeerObj
+		ctx.confFile.peers[requestPeerObj.Pubkey] = requestPeerObj
 	}
 	err = ctx.confFile.save(ctx.ifname)
 	if err != nil {
@@ -217,7 +217,7 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 		}
 		peerObj := ctx.confFile.peers[pubkey]
 		delete(ctx.confFile.peers, pubkey)
-		peerObj.pubkey = requestObj.newPubKey
+		peerObj.Pubkey = requestObj.newPubKey
 		peerObj.presharedKey = requestObj.newPSK
 		ctx.confFile.peers[requestObj.newPubKey] = peerObj
 		err = ctx.confFile.save(ctx.ifname)

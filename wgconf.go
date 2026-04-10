@@ -9,10 +9,10 @@ import (
 )
 
 type WgPeer struct {
-	pubkey       string
+	Pubkey       string
 	presharedKey *string
-	allowedIps   string
-	comment      string
+	AllowedIps   string
+	Comment      string
 }
 
 type WgConf struct {
@@ -80,10 +80,10 @@ func loadWgConf(filePath string) (*WgConf, error) {
 			}
 			// Construct the peer object
 			peersMap[pubkey] = WgPeer{
-				pubkey:       pubkey,
+				Pubkey:       pubkey,
 				presharedKey: presharedKey,
-				allowedIps:   allowedIPs,
-				comment:      comment,
+				AllowedIps:   allowedIPs,
+				Comment:      comment,
 			}
 		}
 	}
@@ -109,11 +109,11 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		if err != nil {
 			return err
 		}
-		_, err = sec.NewKey("PublicKey", peer.pubkey)
+		_, err = sec.NewKey("PublicKey", peer.Pubkey)
 		if err != nil {
 			return err
 		}
-		_, err = sec.NewKey("AllowedIPs", peer.allowedIps)
+		_, err = sec.NewKey("AllowedIPs", peer.AllowedIps)
 		if err != nil {
 			return err
 		}
@@ -123,7 +123,7 @@ func (wgConf *WgConf) save(applyTo *string) error {
 				return err
 			}
 		}
-		sec.Comment = fmt.Sprintf("# %s", peer.comment)
+		sec.Comment = fmt.Sprintf("# %s", peer.Comment)
 	}
 	// Save the INI file
 	err := wgConf.file.SaveTo(wgConf.filePath)

@@ -118,16 +118,16 @@
         </div>
         <table id="PeersListTable">
             <tr>
-                <th>Public Key</th>
-                <th>Allowed IPs</th>
                 <th>Name</th>
+                <th>Allowed IPs</th>
+                <th>Public Key</th>
                 <th></th>
             </tr>
             {{ range .peers }}
             <tr class="peersListEntry visible">
-                <td class="editableField">{{ .comment }}</td>
-                <td class="editableField">{{ .allowedIps }}</td>
-                <td>{{ .pubkey }}</td>
+                <td class="editableField">{{ .Comment }}</td>
+                <td class="editableField">{{ .AllowedIps }}</td>
+                <td>{{ .Pubkey }}</td>
                 <td><button class="deletePeerButton">Delete</button></td>
             </tr>
             {{ end }}
@@ -164,7 +164,7 @@
         </div>
         <div style="flex-direction: column;">
             <span>Send the following registration link to the client:</span>
-            <a id="AddPeerDialogRegistrationLink"></a>
+            <a id="AddPeerDialogRegistrationLink" style="padding: 3px;"></a>
             <span><b>You cannot get this link again after closing this dialog!</b></span>
         </div>
         <div style="flex-direction: row;">
@@ -180,7 +180,11 @@
         let preimage = new Uint8Array(32)
         window.crypto.getRandomValues(preimage)
         pubkey = await window.crypto.subtle.digest("SHA-256", preimage)
-        registrationLink = `${window.location.href}/peer/${preimage.toBase64({"alphabet": "base64url", "omitPadding": true})}`
+        registrationLink = window.location.href
+        if (!registrationLink.endsWith("/")) {
+            registrationLink = `${registrationLink}/`
+        }
+        registrationLink = `${registrationLink}peer/${preimage.toBase64({"alphabet": "base64url", "omitPadding": true})}`
         document.getElementById("AddPeerDialogNameInput").value = "";
         document.getElementById("AddPeerDialogIPInput").value = "";
         document.getElementById("AddPeerDialogRegistrationLink").href = registrationLink;
