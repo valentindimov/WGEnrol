@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -84,7 +85,30 @@ func (peer *WgPeer) validate() error {
 	return nil
 }
 
-func loadWgConf(filePath string) (*WgConf, error) {
+// Saves the INI file to a path atomically.
+func saveIniFile(iniFile *ini.File, toPath string) error {
+	toPath, err := filepath.Abs(toPath)
+	if err != nil {
+		return err
+	}
+	tempfile, err := os.CreateTemp(filepath.Dir(toPath), fmt.Sprintf("%s.swp", filepath.Base(toPath)))
+	defer os.Remove(tempfile.Name())
+	err = iniFile.SaveTo(tempfile.Name())
+	if err != nil {
+		return err
+	}
+	err = tempfile.Close()
+	if err != nil {
+		return err
+	}
+	err = os.Rename(tempfile.Name(), toPath)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadWgConf(filePathIn string) (*WgConf, error) {
 	// Step 1: Load INI file
 	options := ini.LoadOptions{
 		AllowNonUniqueSections:     true,
@@ -92,7 +116,11 @@ func loadWgConf(filePath string) (*WgConf, error) {
 		AllowDuplicateShadowValues: true,
 		AllowBooleanKeys:           true,
 	}
-	cfg, err := ini.LoadSources(options, filePath)
+	filePathAbs, err := filepath.Abs(filePathIn)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := ini.LoadSources(options, filePathAbs)
 	if err != nil {
 		return nil, err
 	}
@@ -151,12 +179,12 @@ func loadWgConf(filePath string) (*WgConf, error) {
 	}
 
 	// Finally: Write back the file to ensure the warning is displayed, and return
-	err = cfg.SaveTo(filePath)
+	err = saveIniFile(cfg, filePathAbs)
 	if err != nil {
 		return nil, err
 	}
 	result := WgConf{
-		filePath: filePath,
+		filePath: filePathAbs,
 		file:     cfg,
 		Peers:    peersMap,
 	}
@@ -187,8 +215,8 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		}
 		sec.Comment = fmt.Sprintf("# %s", peer.Comment)
 	}
-	// Save the INI file
-	err := wgConf.file.SaveTo(wgConf.filePath)
+	// Save the INI file.
+	err := saveIniFile(wgConf.file, wgConf.filePath)
 	if err != nil {
 		return err
 	}
@@ -493,9 +521,9 @@ func main() {
 		tlsCertPathPtr = nil
 	}
 	if len(*tlsKeyPathPtr) == 0 {
-		tlsCertPathPtr = nil
+		tlsKeyPathPtr = nil
 	}
-	if (tlsKeyPathPtr == nil) != (tlsCertPathPtr == nil) {
+	if !((tlsKeyPathPtr == nil && tlsCertPathPtr == nil) || (tlsKeyPathPtr != nil && tlsCertPathPtr != nil)) {
 		log.Fatal("-tlscert and -tlskey must both be specified if TLS should be used.")
 	}
 
