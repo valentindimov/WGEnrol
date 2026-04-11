@@ -137,21 +137,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
                 (await crypto.subtle.exportKey("jwk", x25519_key.privateKey)).d, 
                 {"alphabet": "base64url", "lastChunkHandling": "loose"}
             ).toBase64({"alphabet": "base64", "omitPadding": false});
-            wgConfig = `
-            [Interface]
-            PrivateKey = ${privkey}
-            Address = {{ .peerAddresses }}
-            {{- if .advertisedDNS }}
-            DNS = {{ .advertisedDNS }}
-            {{- end }}
+            wgConfig = `[Interface]
+PrivateKey = ${privkey}
+Address = {{ .peerAddresses }}
+{{- if .advertisedDNS }}
+DNS = {{ .advertisedDNS }}
+{{- end }}
 
-            [Peer]
-            PublicKey = {{ .serverPublicKey }}
-            PresharedKey = ${psk}
-            AllowedIPs = {{ .advertisedNetworks }}
-            Endpoint = {{ .advertisedEndpoint }}
-            PersistentKeepalive = 25
-            `
+[Peer]
+PublicKey = {{ .serverPublicKey }}
+PresharedKey = ${psk}
+AllowedIPs = {{ .advertisedNetworks }}
+Endpoint = {{ .advertisedEndpoint }}
+PersistentKeepalive = 25
+`
             new QRCode(document.getElementById("qrcode"), {
                 text: wgConfig,
                 width: 512,

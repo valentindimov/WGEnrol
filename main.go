@@ -411,7 +411,7 @@ func getFirstIPInNetwork(network *net.IPNet) net.IP {
 }
 
 func computePeerIPs(peerAllowedIps string) (*string, error) {
-	networks := make([]string, 10)
+	networks := make([]string, 0)
 	if len(strings.Trim(peerAllowedIps, " ")) > 0 {
 		addrs := strings.SplitSeq(peerAllowedIps, ",")
 		for addr := range addrs {
@@ -448,7 +448,7 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 			return err
 		}
 		responseWriter.Header().Set("Content-Type", "text/html")
-		return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
+		return ctx.enrolmentHtmlTpl.Execute(responseWriter, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
 			"advertisedDNS":      ctx.advertisedDNS,
