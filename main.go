@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -229,25 +230,23 @@ func (wgConf *WgConf) save(applyTo *string) error {
 	// If requested, apply the new configuration
 	if applyTo != nil {
 		// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
-		/*
-			stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
-			stripCmdOut, err := stripCmd.StdoutPipe()
-			if err != nil {
-				return err
-			}
-			syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/dev/fd/0")
-			syncCmd.Stdin = stripCmdOut
-			syncCmd.Start()
-			stripCmd.Start()
-			errSync := syncCmd.Wait()
-			errStrip := stripCmd.Wait()
-			if errStrip != nil {
-				return errStrip
-			}
-			if errSync != nil {
-				return errSync
-			}
-		*/
+		stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
+		stripCmdOut, err := stripCmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/dev/fd/0")
+		syncCmd.Stdin = stripCmdOut
+		syncCmd.Start()
+		stripCmd.Start()
+		errSync := syncCmd.Wait()
+		errStrip := stripCmd.Wait()
+		if errStrip != nil {
+			return errStrip
+		}
+		if errSync != nil {
+			return errSync
+		}
 	}
 	return nil
 }
