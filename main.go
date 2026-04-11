@@ -44,11 +44,13 @@ type WgConf struct {
 }
 
 type ServerContext struct {
-	stateMutex       sync.Mutex
-	ifname           *string
-	confFile         *WgConf
-	indexHtmlTpl     *template.Template
-	enrolmentHtmlTpl *template.Template
+	stateMutex         sync.Mutex
+	ifname             *string
+	confFile           *WgConf
+	indexHtmlTpl       *template.Template
+	enrolmentHtmlTpl   *template.Template
+	advertisedEndpoint string
+	advertisedDNS      *string
 }
 
 func validateWireguardKey(input string) error {
@@ -470,7 +472,17 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	return nil
 }
 
-func listenAndServe(listenOnPtr *string, tlscert *string, tlskey *string, ifname *string, confFilePath string, adminUser string, adminPasswordHash string) {
+func listenAndServe(
+	listenOnPtr *string,
+	tlscert *string,
+	tlskey *string,
+	ifname *string,
+	confFilePath string,
+	advertisedEndpoint string,
+	advertisedDNS *string,
+	adminUser string,
+	adminPasswordHash string,
+) {
 	indexHtmlTpl, err := template.New("index.html").Parse(indexHtmlTemplate)
 	if err != nil {
 		log.Fatal(err)
@@ -484,10 +496,12 @@ func listenAndServe(listenOnPtr *string, tlscert *string, tlskey *string, ifname
 		log.Fatal(err)
 	}
 	ctx := ServerContext{
-		ifname:           ifname,
-		confFile:         confFile,
-		indexHtmlTpl:     indexHtmlTpl,
-		enrolmentHtmlTpl: enrolmentHtmlTpl,
+		ifname:             ifname,
+		confFile:           confFile,
+		indexHtmlTpl:       indexHtmlTpl,
+		enrolmentHtmlTpl:   enrolmentHtmlTpl,
+		advertisedEndpoint: advertisedEndpoint,
+		advertisedDNS:      advertisedDNS,
 	}
 
 	// Admin panel functions
@@ -515,6 +529,8 @@ func main() {
 	confFilePathPtr := flag.String("conffile", "/etc/wireguard/wg0.conf", "WireGuard config file to manage. It is assumed to already exist.")
 	tlsCertPathPtr := flag.String("tlscert", "", "Path to TLS certificate (specify only if TLS should be enabled)")
 	tlsKeyPathPtr := flag.String("tlskey", "", "Path to TLS certificate (specify only if TLS should be enabled)")
+	advertisedEndpoint := flag.String("endpoint", "", "Endpoint under which clients can reach us (e.g. my.domain.name:51280)")
+	advertisedDNS := flag.String("dns", "", "DNS server to advertise to clients")
 	flag.Parse()
 
 	if len(*tlsCertPathPtr) == 0 {
@@ -525,6 +541,14 @@ func main() {
 	}
 	if !((tlsKeyPathPtr == nil && tlsCertPathPtr == nil) || (tlsKeyPathPtr != nil && tlsCertPathPtr != nil)) {
 		log.Fatal("-tlscert and -tlskey must both be specified if TLS should be used.")
+	}
+
+	if len(*advertisedEndpoint) == 0 {
+		log.Fatal("-endpoint is required.")
+	}
+
+	if len(*advertisedDNS) == 0 {
+		advertisedDNS = nil
 	}
 
 	adminUser, adminUserFound := os.LookupEnv("ADMIN_USER")
@@ -539,5 +563,5 @@ func main() {
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
 
-	listenAndServe(listenOnPtr, tlsCertPathPtr, tlsKeyPathPtr, ifnamePtr, *confFilePathPtr, adminUser, adminPasswordHash)
+	listenAndServe(listenOnPtr, tlsCertPathPtr, tlsKeyPathPtr, ifnamePtr, *confFilePathPtr, *advertisedEndpoint, advertisedDNS, adminUser, adminPasswordHash)
 }
