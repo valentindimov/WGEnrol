@@ -575,7 +575,7 @@ func main() {
 
 	// Get parameters
 	listenOnPtr := flag.String("listen", ":8080", "Address and port to bind on")
-	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. It is assumed to already exist.")
+	ifnamePtr := flag.String("ifname", "", "WireGuard interface to manage. It is assumed to already exist.")
 	confFilePathPtr := flag.String("conffile", "/etc/wireguard/wg0.conf", "WireGuard config file to manage. It is assumed to already exist.")
 	tlsCertPathPtr := flag.String("tlscert", "", "Path to TLS certificate (specify only if TLS should be enabled)")
 	tlsKeyPathPtr := flag.String("tlskey", "", "Path to TLS certificate (specify only if TLS should be enabled)")
@@ -624,7 +624,6 @@ func main() {
 	ctx := ServerContext{
 		indexHtmlTpl:        indexHtmlTpl,
 		enrolmentHtmlTpl:    enrolmentHtmlTpl,
-		ifname:              ifnamePtr,
 		confFile:            confFile,
 		advertisedEndpoint:  *advertisedEndpoint,
 		advertisedNetworks:  *advertisedNetworks,
@@ -632,6 +631,9 @@ func main() {
 	}
 	if len(*advertisedDNS) > 0 {
 		ctx.advertisedDNS = advertisedDNS
+	}
+	if len(*ifnamePtr) > 0 {
+		ctx.ifname = ifnamePtr
 	}
 
 	// Basic Auth parameters
