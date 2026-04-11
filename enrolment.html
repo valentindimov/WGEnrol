@@ -94,11 +94,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <h3>Private keys were generated in your browser and did not leave this device.</h3>
         <button id="CopyConfigButton"
             style="margin-top: 10px; width: 240px;" 
-            onclick=" copyWgConfigToClipboard(); event.target.innerText='Copied!';" 
-            onmouseout="event.target.innerText='Copy Config (Desktop)';">Copy Config (Desktop)</button>
+            onclick="downloadWgConfig();">Download Config (Desktop clients)</button>
         <button id="ShowQRCodeButton"
             style="margin: 10px; width: 240px;" 
-            onclick="displayQRCode();">Show QR code (Mobile)</button>
+            onclick="displayQRCode();">Show QR code (Mobile clients)</button>
         <button id="HideQRCodeButton" class="hidden"
             style="margin: 10px; width: 240px;" 
             onclick="hideQRCode();">Hide QR code</button>
@@ -113,9 +112,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         wgConfig = {}; // prevents generateWgConfig() from doing anything
         window.location.replace("about:blank");
     }
-    async function copyWgConfigToClipboard() {
+    async function downloadWgConfig() {
         await generateWgConfig();
-        await navigator.clipboard.write([new ClipboardItem({["text/plain"]: wgConfig})]);
+        downloadableFile = new File([wgConfig], 'wireguard.conf', {
+            type: 'text/plain',
+        })
+        const link = document.createElement('a')
+        const url = URL.createObjectURL(downloadableFile)
+
+        link.href = url
+        link.download = downloadableFile.name
+        link.classList.add("hidden")
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
     }
     async function displayQRCode() {
         await generateWgConfig();
