@@ -39,9 +39,10 @@ type WgPeer struct {
 }
 
 type WgConf struct {
-	filePath string
-	file     *ini.File
-	Peers    map[string]WgPeer
+	filePath    string
+	file        *ini.File
+	Peers       map[string]WgPeer
+	VpnNetworks []*net.IPNet
 }
 
 type ServerContext struct {
@@ -137,7 +138,30 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 	}
 	interfaceSection.Comment = "# This file is managed automatically.\n# Do not edit it, your changes may get overwritten."
 
-	// Step 2: load peers from file
+	// Step 2: Determine VPN networks
+	networksList := make([]*net.IPNet, 0)
+	if interfaceSection.HasKey("Address") {
+		val, err := interfaceSection.GetKey("Address")
+		if err != nil {
+			return nil, err
+		}
+		networksStr := strings.Trim(val.Value(), " ")
+		if len(networksStr) == 0 {
+			return nil, fmt.Errorf("Address key in Interface section cannot be empty.")
+		}
+		addrs := strings.SplitSeq(networksStr, ",")
+		for addr := range addrs {
+			_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+			if err != nil {
+				return nil, err
+			}
+			networksList = append(networksList, network)
+		}
+	} else {
+		return nil, fmt.Errorf("Could not find Address key in Interface section.")
+	}
+
+	// Step 3: load peers from file
 	peersMap := make(map[string]WgPeer)
 	sections, err := cfg.SectionsByName("Peer")
 	if err == nil && sections != nil {
@@ -191,9 +215,10 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		return nil, err
 	}
 	result := WgConf{
-		filePath: filePathAbs,
-		file:     cfg,
-		Peers:    peersMap,
+		filePath:    filePathAbs,
+		file:        cfg,
+		Peers:       peersMap,
+		VpnNetworks: networksList,
 	}
 	return &result, nil
 }
@@ -411,8 +436,8 @@ func getFirstIPInNetwork(network *net.IPNet) net.IP {
 	}
 }
 
-func computePeerIPs(peerAllowedIps string) (*string, error) {
-	networks := make([]string, 0)
+func computePeerIPs(peerAllowedIps string, cfg *WgConf) (*string, error) {
+	ips := make([]net.IP, 0)
 	if len(strings.Trim(peerAllowedIps, " ")) > 0 {
 		addrs := strings.SplitSeq(peerAllowedIps, ",")
 		for addr := range addrs {
@@ -420,14 +445,22 @@ func computePeerIPs(peerAllowedIps string) (*string, error) {
 			if err != nil {
 				return nil, err
 			}
-			ipWithNet := net.IPNet{
-				IP:   getFirstIPInNetwork(network),
-				Mask: network.Mask,
-			}
-			networks = append(networks, ipWithNet.String())
+			ips = append(ips, getFirstIPInNetwork(network))
 		}
 	}
-	result := strings.Join(networks, ",")
+	peerNetworks := make([]string, 0)
+	for _, ip := range ips {
+		for _, network := range cfg.VpnNetworks {
+			if network.Contains(ip) {
+				ipWithNet := net.IPNet{
+					IP:   ip,
+					Mask: network.Mask,
+				}
+				peerNetworks = append(peerNetworks, ipWithNet.String())
+			}
+		}
+	}
+	result := strings.Join(peerNetworks, ",")
 	return &result, nil
 }
 
@@ -444,7 +477,7 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
 
 	if peer, ok := ctx.confFile.Peers[pubkey]; ok {
-		peerAddrs, err := computePeerIPs(peer.AllowedIps)
+		peerAddrs, err := computePeerIPs(peer.AllowedIps, ctx.confFile)
 		if err != nil {
 			return err
 		}
