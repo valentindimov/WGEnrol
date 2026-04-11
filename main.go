@@ -499,10 +499,6 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 			return nil
 		}
-
-		log.Print(string(requestBytes))
-		log.Print(requestObj.NewPubKey)
-
 		err = validateWireguardKey(requestObj.NewPubKey)
 		if err != nil {
 			log.Print(err)

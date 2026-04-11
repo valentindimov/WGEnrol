@@ -91,7 +91,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
     <div id="DataContainer">
         <h2>Your VPN account is ready.</h2>
-        <h3>Do not close this page - you will not be able to open it again.</h3>
+        <h3>Private keys were generated in your browser and did not leave this device.</h3>
         <button id="CopyConfigButton"
             style="margin-top: 10px; width: 240px;" 
             onclick=" copyWgConfigToClipboard(); event.target.innerText='Copied!';" 
@@ -106,8 +106,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
 </div>
 <script>
-    var wgConfig = null
-    var qrcode = null
+    var wgConfig = null;
+    var qrcode = null;
+
+    if (!window.confirm("You can only open this page once. Continue?")) {
+        wgConfig = {}; // prevents generateWgConfig() from doing anything
+        window.location.replace("about:blank");
+    }
     async function copyWgConfigToClipboard() {
         await generateWgConfig();
         await navigator.clipboard.write([new ClipboardItem({["text/plain"]: wgConfig})]);
