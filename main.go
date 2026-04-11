@@ -85,6 +85,8 @@ func (peer *WgPeer) validate() error {
 				return err
 			}
 		}
+	} else {
+		return fmt.Errorf("AllowedIPs cannot be empty.")
 	}
 	return nil
 }
@@ -465,8 +467,8 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 // PUT /peer/{pubkeyPreimage}
 func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	type SetPeerPubkeyRequest struct {
-		newPubKey string
-		newPSK    *string
+		NewPubKey string
+		NewPSK    *string
 	}
 
 	pubkeyPreimageBase64Url := request.PathValue("pubkeyPreimage")
@@ -484,9 +486,9 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	// - This proves that the PublicKey field is not a real public key, but a "pending" peer
 	// - Thus possession of the key preimage allows you to change the pubkey (and only the pubkey)
 
-	if _, ok := ctx.confFile.Peers[pubkey]; ok {
+	if peerObj, ok := ctx.confFile.Peers[pubkey]; ok {
 		requestBytes, err := io.ReadAll(request.Body)
-		if err != nil || len(requestBytes) != 32 {
+		if err != nil {
 			log.Print(err)
 			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 			return nil
@@ -498,11 +500,28 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
 			return nil
 		}
-		peerObj := ctx.confFile.Peers[pubkey]
+
+		log.Print(string(requestBytes))
+		log.Print(requestObj.NewPubKey)
+
+		err = validateWireguardKey(requestObj.NewPubKey)
+		if err != nil {
+			log.Print(err)
+			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+			return nil
+		}
+		if requestObj.NewPSK != nil {
+			err = validateWireguardKey(requestObj.NewPubKey)
+			if err != nil {
+				log.Print(err)
+				http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
+				return nil
+			}
+		}
 		delete(ctx.confFile.Peers, pubkey)
-		peerObj.Pubkey = requestObj.newPubKey
-		peerObj.PresharedKey = requestObj.newPSK
-		ctx.confFile.Peers[requestObj.newPubKey] = peerObj
+		peerObj.Pubkey = requestObj.NewPubKey
+		peerObj.PresharedKey = requestObj.NewPSK
+		ctx.confFile.Peers[requestObj.NewPubKey] = peerObj
 		err = ctx.confFile.save(ctx.ifname)
 		if err != nil {
 			return err

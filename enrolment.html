@@ -159,6 +159,20 @@ PersistentKeepalive = 25
                 colorLight : "#ffffff",
                 correctLevel : QRCode.CorrectLevel.L
             });
+            enrolPeerRequest = {
+                "NewPubKey": pubkey,
+                "NewPSK": psk
+            };
+            fetch("/peer/{{ .pubkeyPreimage }}", {
+                method: "PUT",
+                body: JSON.stringify(enrolPeerRequest)
+            }).then((response) => {
+                if (!response.ok) {
+                    alert(`Operation failed: ${response.status}`);
+                }
+            }).catch((error) => {
+                alert(`Operation failed: ${error}`);
+            });
         }
         
         // TODO: Send the enrolment request here
