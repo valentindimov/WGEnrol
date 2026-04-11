@@ -51,6 +51,8 @@ func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPa
 			if usernameMatch && passwordMatch {
 				next.ServeHTTP(responseWriter, request)
 				return
+			} else if len(username) == 0 && len(password) == 0 {
+				log.Printf("From %s: %s %s Logout\n", request.RemoteAddr, request.Method, request.URL.Path)
 			} else {
 				log.Printf("From %s: %s %s HTTP Basic Auth failed\n", request.RemoteAddr, request.Method, request.URL.Path)
 			}

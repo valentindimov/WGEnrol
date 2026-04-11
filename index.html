@@ -38,7 +38,7 @@
     #HeaderContainer {
         background-color: #99dbff;
         display: flex;
-        flex-flow: column nowrap;
+        flex-flow: row nowrap;
         align-items: center;
         padding: 10px;
         border-bottom: 2px solid #759fb6;
@@ -59,7 +59,7 @@
         margin: 0px 5px 0px 5px;
         padding: 3px;
     }
-    #SearchBoxSpacer {
+    div.spacer {
         flex-grow: 1;
     }
     #PeersListTable {
@@ -107,13 +107,16 @@
 <body>
 <div id="MainContainer">
     <div id="HeaderContainer">
+        <div class="spacer"></div>
         <h1>WGEnrol</h1>
+        <div class="spacer"></div>
+        <button onclick="logout()">Log Out</button>
     </div>
     <div id="DataContainer">
         <div id="SearchBoxContainer">
             <input type="search" id="PeerSearchBox" />
             <button id="PeerSearchButton">Search</button>
-            <div id="SearchBoxSpacer"></div>
+            <div class="spacer"></div>
             <button id="AddNewPeerButton">Add New</button>
         </div>
         <table id="PeersListTable">
@@ -308,5 +311,13 @@
             document.getElementById('PeerSearchButton').click();
         }
     });
+    // Logout - the site uses Basic Auth, so we just overwrite the credentials with empty ones
+    async function logout() {
+        var xmlhttp = new XMLHttpRequest();
+        xmlhttp.open("GET", window.location.href, true);
+        xmlhttp.setRequestHeader("Authorization", `Basic ${btoa(":")}`);
+        xmlhttp.send();
+        window.location.reload();
+    }
 </script>
 </html>
