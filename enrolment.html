@@ -140,13 +140,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
             wgConfig = `
             [Interface]
             PrivateKey = ${privkey}
-            Address = {{ .peerAddress }}
+            Address = {{ .peerAddresses }}
+            {{- if .advertisedDNS }}
             DNS = {{ .advertisedDNS }}
+            {{- end }}
 
             [Peer]
             PublicKey = {{ .serverPublicKey }}
             PresharedKey = ${psk}
-            AllowedIPs = {{ .advertisedNetwork }}
+            AllowedIPs = {{ .advertisedNetworks }}
             Endpoint = {{ .advertisedEndpoint }}
             PersistentKeepalive = 25
             `

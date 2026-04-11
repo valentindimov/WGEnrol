@@ -44,13 +44,15 @@ type WgConf struct {
 }
 
 type ServerContext struct {
-	stateMutex         sync.Mutex
-	ifname             *string
-	confFile           *WgConf
-	indexHtmlTpl       *template.Template
-	enrolmentHtmlTpl   *template.Template
-	advertisedEndpoint string
-	advertisedDNS      *string
+	stateMutex          sync.Mutex
+	ifname              *string
+	confFile            *WgConf
+	indexHtmlTpl        *template.Template
+	enrolmentHtmlTpl    *template.Template
+	advertisedEndpoint  string
+	advertisedNetworks  string
+	advertisedPublicKey string
+	advertisedDNS       *string
 }
 
 func validateWireguardKey(input string) error {
@@ -394,6 +396,40 @@ func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 	return nil
 }
 
+func getFirstIPInNetwork(network *net.IPNet) net.IP {
+	ones, bits := network.Mask.Size()
+	if ones == bits {
+		return network.IP
+	} else {
+		networkIPMasked := make([]byte, len(network.IP))
+		for i := 0; i < len(networkIPMasked); i++ {
+			networkIPMasked[i] = network.IP[i] & network.Mask[i]
+		}
+		networkIPMasked[len(networkIPMasked)-1] |= 1
+		return networkIPMasked
+	}
+}
+
+func computePeerIPs(peerAllowedIps string) (*string, error) {
+	networks := make([]string, 10)
+	if len(strings.Trim(peerAllowedIps, " ")) > 0 {
+		addrs := strings.SplitSeq(peerAllowedIps, ",")
+		for addr := range addrs {
+			_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+			if err != nil {
+				return nil, err
+			}
+			ipWithNet := net.IPNet{
+				IP:   getFirstIPInNetwork(network),
+				Mask: network.Mask,
+			}
+			networks = append(networks, ipWithNet.String())
+		}
+	}
+	result := strings.Join(networks, ",")
+	return &result, nil
+}
+
 // GET /peer/{pubkeyPreimage}
 func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
 	pubkeyPreimageBase64Url := request.PathValue("pubkeyPreimage")
@@ -406,11 +442,19 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
 
-	if _, ok := ctx.confFile.Peers[pubkey]; ok {
+	if peer, ok := ctx.confFile.Peers[pubkey]; ok {
+		peerAddrs, err := computePeerIPs(peer.AllowedIps)
+		if err != nil {
+			return err
+		}
 		responseWriter.Header().Set("Content-Type", "text/html")
 		return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
-			"pubkeyPreimage": pubkeyPreimageBase64Url,
-			"peer":           ctx.confFile.Peers[pubkey],
+			"peerAddresses":      peerAddrs,
+			"pubkeyPreimage":     pubkeyPreimageBase64Url,
+			"advertisedDNS":      ctx.advertisedDNS,
+			"serverPublicKey":    ctx.advertisedPublicKey,
+			"advertisedNetworks": ctx.advertisedNetworks,
+			"advertisedEndpoint": ctx.advertisedEndpoint,
 		})
 	} else {
 		http.Error(responseWriter, "Not Found", http.StatusNotFound)
@@ -476,43 +520,20 @@ func listenAndServe(
 	listenOnPtr *string,
 	tlscert *string,
 	tlskey *string,
-	ifname *string,
-	confFilePath string,
-	advertisedEndpoint string,
-	advertisedDNS *string,
+	ctx *ServerContext,
 	adminUser string,
 	adminPasswordHash string,
 ) {
-	indexHtmlTpl, err := template.New("index.html").Parse(indexHtmlTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
-	enrolmentHtmlTpl, err := template.New("enrolment.html").Parse(enrolmentHtmlTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
-	confFile, err := loadWgConf(confFilePath)
-	if confFile == nil || err != nil {
-		log.Fatal(err)
-	}
-	ctx := ServerContext{
-		ifname:             ifname,
-		confFile:           confFile,
-		indexHtmlTpl:       indexHtmlTpl,
-		enrolmentHtmlTpl:   enrolmentHtmlTpl,
-		advertisedEndpoint: advertisedEndpoint,
-		advertisedDNS:      advertisedDNS,
-	}
-
 	// Admin panel functions
-	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, &ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, &ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("POST /peer", basicAuthWrapper(wrapFuncAsHandler(handleCreatePeer, &ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("DELETE /peer/{pubkey}", basicAuthWrapper(wrapFuncAsHandler(handleDeletePeer, &ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("POST /peer", basicAuthWrapper(wrapFuncAsHandler(handleCreatePeer, ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("DELETE /peer/{pubkey}", basicAuthWrapper(wrapFuncAsHandler(handleDeletePeer, ctx), adminUser, adminPasswordHash))
 	// Peer enrolment
-	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleGetPeerEnrolmentPage, &ctx))
-	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleEnrolPeer, &ctx))
+	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleGetPeerEnrolmentPage, ctx))
+	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleEnrolPeer, ctx))
 
+	var err error
 	if tlscert != nil && tlskey != nil {
 		err = http.ListenAndServeTLS(*listenOnPtr, *tlscert, *tlskey, nil)
 	} else {
@@ -524,15 +545,28 @@ func listenAndServe(
 }
 
 func main() {
+	indexHtmlTpl, err := template.New("index.html").Parse(indexHtmlTemplate)
+	if err != nil {
+		log.Fatal(err)
+	}
+	enrolmentHtmlTpl, err := template.New("enrolment.html").Parse(enrolmentHtmlTemplate)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Get parameters
 	listenOnPtr := flag.String("listen", ":8080", "Address and port to bind on")
 	ifnamePtr := flag.String("ifname", "wg0", "WireGuard interface to manage. It is assumed to already exist.")
 	confFilePathPtr := flag.String("conffile", "/etc/wireguard/wg0.conf", "WireGuard config file to manage. It is assumed to already exist.")
 	tlsCertPathPtr := flag.String("tlscert", "", "Path to TLS certificate (specify only if TLS should be enabled)")
 	tlsKeyPathPtr := flag.String("tlskey", "", "Path to TLS certificate (specify only if TLS should be enabled)")
 	advertisedEndpoint := flag.String("endpoint", "", "Endpoint under which clients can reach us (e.g. my.domain.name:51280)")
-	advertisedDNS := flag.String("dns", "", "DNS server to advertise to clients")
+	advertisedNetworks := flag.String("networks", "", "Network to advertise to peers (e.g. 10.44.0.0/16)")
+	advertisedPublicKey := flag.String("pubkey", "", "Public key to advertise to peers (see 'wg show' for that)")
+	advertisedDNS := flag.String("dns", "", "DNS server to advertise to clients (optional)")
 	flag.Parse()
 
+	// Parameter validation
 	if len(*tlsCertPathPtr) == 0 {
 		tlsCertPathPtr = nil
 	}
@@ -542,15 +576,46 @@ func main() {
 	if !((tlsKeyPathPtr == nil && tlsCertPathPtr == nil) || (tlsKeyPathPtr != nil && tlsCertPathPtr != nil)) {
 		log.Fatal("-tlscert and -tlskey must both be specified if TLS should be used.")
 	}
-
-	if len(*advertisedEndpoint) == 0 {
-		log.Fatal("-endpoint is required.")
+	if len(*advertisedEndpoint) == 0 || len(*advertisedNetworks) == 0 || len(*advertisedPublicKey) == 0 {
+		log.Fatal("-endpoint, -networks, and -pubkey are required.")
+	}
+	err = validateWireguardKey(*advertisedPublicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, _, err = net.SplitHostPort(*advertisedEndpoint)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(strings.Trim(*advertisedNetworks, " ")) > 0 {
+		addrs := strings.SplitSeq(*advertisedNetworks, ",")
+		for addr := range addrs {
+			_, _, err = net.ParseCIDR(strings.Trim(addr, " "))
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
 
-	if len(*advertisedDNS) == 0 {
-		advertisedDNS = nil
+	// Create configuration
+	confFile, err := loadWgConf(*confFilePathPtr)
+	if confFile == nil || err != nil {
+		log.Fatal(err)
+	}
+	ctx := ServerContext{
+		indexHtmlTpl:        indexHtmlTpl,
+		enrolmentHtmlTpl:    enrolmentHtmlTpl,
+		ifname:              ifnamePtr,
+		confFile:            confFile,
+		advertisedEndpoint:  *advertisedEndpoint,
+		advertisedNetworks:  *advertisedNetworks,
+		advertisedPublicKey: *advertisedPublicKey,
+	}
+	if len(*advertisedDNS) > 0 {
+		ctx.advertisedDNS = advertisedDNS
 	}
 
+	// Basic Auth parameters
 	adminUser, adminUserFound := os.LookupEnv("ADMIN_USER")
 	if !adminUserFound {
 		log.Fatal("ADMIN_USER environment variable is required.")
@@ -560,8 +625,8 @@ func main() {
 		log.Fatal("ADMIN_PASSWORD_HASH environment variable is required.")
 	}
 
+	// Done, start the server
 	log.Printf("Managing interface %s\n", *ifnamePtr)
 	log.Printf("Listening on %s\n", *listenOnPtr)
-
-	listenAndServe(listenOnPtr, tlsCertPathPtr, tlsKeyPathPtr, ifnamePtr, *confFilePathPtr, *advertisedEndpoint, advertisedDNS, adminUser, adminPasswordHash)
+	listenAndServe(listenOnPtr, tlsCertPathPtr, tlsKeyPathPtr, &ctx, adminUser, adminPasswordHash)
 }
