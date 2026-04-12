@@ -52,7 +52,7 @@
     #SearchBoxContainer {
         display: flex;
         flex-flow: row nowrap;
-        align-items: stretch;
+        align-items: center;
         padding: 0px 5px 5px 5px;
     }
     button {
@@ -114,8 +114,8 @@
     </div>
     <div id="DataContainer">
         <div id="SearchBoxContainer">
+            <b>Search: </b>
             <input type="search" id="PeerSearchBox" />
-            <button id="PeerSearchButton">Search</button>
             <div class="spacer"></div>
             <button id="AddNewPeerButton">Add New</button>
         </div>
@@ -283,7 +283,7 @@
         }
     }
     // Peer search
-    document.getElementById("PeerSearchButton").onclick = function(event) {
+    document.getElementById("PeerSearchBox").onchange = function(event) {
         const searchTerm = document.getElementById("PeerSearchBox").value.toLowerCase();
         const items = document.getElementsByClassName("peersListEntry");
         for (let i = 0; i < items.length; i++) {
@@ -305,12 +305,6 @@
             }
         }
     };
-    document.getElementById("PeerSearchBox").addEventListener('keydown', function(event) {
-        if (event.keyCode === 13) {
-            event.preventDefault();
-            document.getElementById('PeerSearchButton').click();
-        }
-    });
     // Logout - the site uses Basic Auth, so we just overwrite the credentials with empty ones
     async function logout() {
         var xmlhttp = new XMLHttpRequest();
