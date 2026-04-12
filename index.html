@@ -68,6 +68,17 @@
         background-color: #ffffff;
         cursor: pointer;
     }
+    #AddPeerDialogRegistrationLink {
+        padding: 5px;
+        margin: 10px;
+        background-color: #b9b9bf;
+        border: 2px outset #7b7b7e;
+        cursor: pointer;
+    }
+    #AddPeerDialogRegistrationLink:active {
+        background-color: #e7e7eb;
+        border: 2px inset #7b7b7e;
+    }
     dialog {
         padding: 0px;
     }
@@ -151,7 +162,7 @@
             <div class="horizontal" style="padding: 0">
                 <span 
                     id="AddPeerDialogRegistrationLink"
-                    style="padding: 5px; background-color: rgb(185, 185, 191); border: 2px outset rgb(123, 123, 126); cursor: pointer;"
+                    onclick="navigator.clipboard.write([new ClipboardItem({['text/plain']: event.target.innerText})]);"
                 ></span>
             </div>
             <span>The link will become active when you close this dialog.</span>
