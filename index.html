@@ -26,38 +26,19 @@
         min-width: 200px;
         max-width: 800px;
     }
-
-    #MainContainer {
-        background-color: #f5f7f7;
-        display: flex;
-        width: 100vw;
-        height: 100vh;
-        flex-flow: column nowrap;
-        align-items: stretch;
-    }
-    #HeaderContainer {
-        background-color: #99dbff;
-        display: flex;
-        flex-flow: row nowrap;
-        align-items: center;
-        padding: 10px;
-        border-bottom: 2px solid #759fb6;
-    }
-    #DataContainer {
-        display: flex;
-        flex-flow: column nowrap;
-        align-items: stretch;
-        padding: 5px 20px 0px 20px;
-    }
-    #SearchBoxContainer {
-        display: flex;
-        flex-flow: row nowrap;
-        align-items: center;
-        padding: 0px 5px 5px 5px;
-    }
     button {
         margin: 0px 5px 0px 5px;
         padding: 3px;
+    }
+    div {
+        display: flex;
+        flex-grow: 0;
+    }
+    div.vertical {
+        flex-flow: column nowrap;
+    }
+    div.horizontal {
+        flex-flow: row nowrap;
     }
     div.spacer {
         flex-grow: 1;
@@ -105,15 +86,15 @@
 </style>
 </head>
 <body>
-<div id="MainContainer">
-    <div id="HeaderContainer">
+<div id="MainContainer" class="vertical" style="background-color: #f5f7f7; width: 100vw; height: 100vh; align-items: stretch;">
+    <div id="HeaderContainer" class="horizontal" style="background-color: #99dbff; align-items: center; padding: 10px; border-bottom: 2px solid #759fb6;">
         <div class="spacer"></div>
         <h1>WGEnrol</h1>
         <div class="spacer"></div>
         <button onclick="logout()">Log Out</button>
     </div>
-    <div id="DataContainer">
-        <div id="SearchBoxContainer">
+    <div id="DataContainer" class="vertical" style="align-items: stretch; padding: 5px 20px 0px 20px;">
+        <div id="SearchBoxContainer" class="horizontal" style="align-items: center; padding: 0px 5px 5px 5px;">
             <b>Search: </b>
             <input type="search" id="PeerSearchBox" />
             <div class="spacer"></div>
@@ -138,22 +119,22 @@
     </div>
 </div>
 <dialog id="EditFieldDialog">
-    <div>
-        <div>
+    <div class="vertical">
+        <div class="vertical">
             <p>Please specify a value:</p>
         </div>
-        <div style="flex-direction: row;">
+        <div class="horizontal">
             <input type="text" id="EditFieldDialogInput" />
             <button id="EditFieldDialogSaveButton">Save</button>
         </div>
     </div>
 </dialog>
 <dialog id="AddPeerDialog">
-    <div>
+    <div class="vertical">
         <div>
             <p>Specify the new peer's parameters:</p>
         </div>
-        <div style="flex-direction: row;">
+        <div class="horizontal">
             <table>
                 <tr>
                     <th scope="col">Peer Name:</th>
@@ -165,13 +146,13 @@
                 </tr>
             </table>
         </div>
-        <div style="flex-direction: column;">
+        <div class="vertical">
             <span>Send the following registration link to the client:</span>
             <a id="AddPeerDialogRegistrationLink"></a>
             <span>The link will become active when you close this dialog.</span>
             <span><b>You cannot get this link again afterwards!</b></span>
         </div>
-        <div style="flex-direction: row;">
+        <div class="horizontal">
             <button id="AddPeerDialogSaveButton">Save</button>
             <button id="AddPeerDialogCancelButton">Cancel</button>
         </div>
