@@ -102,8 +102,8 @@
         </div>
         <table id="PeersListTable">
             <tr>
-                <th>Name</th>
-                <th>Allowed IPs</th>
+                <th>Peer Name</th>
+                <th>Peer Subnets</th>
                 <th>Public Key</th>
                 <th></th>
             </tr>
@@ -111,7 +111,7 @@
             <tr class="peersListEntry visible">
                 <td class="editableField">{{ .Comment }}</td>
                 <td class="editableField">{{ .AllowedIps }}</td>
-                <td>{{ .Pubkey }}</td>
+                <td style="color: #848588;">{{ .Pubkey }}</td>
                 <td><button class="deletePeerButton">Delete</button></td>
             </tr>
             {{ end }}
@@ -141,14 +141,19 @@
                     <td><input type="text" id="AddPeerDialogNameInput" /></td>
                 </tr>
                 <tr>
-                    <th scope="col">Allowed IPs: </th>
+                    <th scope="col">Peer Subnets:<br>(e.g. "10.44.1.2/32")</th>
                     <td><input type="text" id="AddPeerDialogIPInput" /></td>
                 </tr>
             </table>
         </div>
         <div class="vertical">
-            <span>Send the following registration link to the client:</span>
-            <a id="AddPeerDialogRegistrationLink"></a>
+            <span>Send the following registration link to the client (click to copy):</span>
+            <div class="horizontal" style="padding: 0">
+                <span 
+                    id="AddPeerDialogRegistrationLink"
+                    style="padding: 5px; background-color: rgb(185, 185, 191); border: 2px outset rgb(123, 123, 126); cursor: pointer;"
+                ></span>
+            </div>
             <span>The link will become active when you close this dialog.</span>
             <span><b>You cannot get this link again afterwards!</b></span>
         </div>
