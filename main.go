@@ -2,11 +2,11 @@ package main
 
 import (
 	"flag"
+	"html/template"
 	"log"
 	"net"
 	"os"
 	"strings"
-	"text/template"
 )
 
 func main() {

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"html/template"
 	"io"
 	"log"
 	"net"
@@ -14,7 +15,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"text/template"
 )
 
 //go:embed index.html
