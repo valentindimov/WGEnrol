@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -18,7 +19,7 @@ import (
 )
 
 func compileTemplateOrPanic(name string, source string) *template.Template {
-	result, err := template.New("index.html").Parse(source)
+	result, err := template.New(name).Parse(source)
 	if err != nil {
 		panic(err)
 	}
@@ -70,125 +71,129 @@ func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPa
 	})
 }
 
-func wrapFuncAsHandler(next func(ctx *ServerContext, w http.ResponseWriter, r *http.Request) error, ctx *ServerContext) http.HandlerFunc {
+func sendHttpError(w http.ResponseWriter, err error, statusCode int, reportError bool) {
+	log.Print(err)
+	var errorMessage string
+	if reportError {
+		errorMessage = fmt.Sprintf("%s", err)
+	} else {
+		errorMessage = "Error"
+	}
+	http.Error(w, errorMessage, statusCode)
+}
+
+func wrapFuncAsHandler(next func(ctx *ServerContext, w http.ResponseWriter, r *http.Request), ctx *ServerContext) http.HandlerFunc {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		ctx.stateMutex.Lock()
 		defer ctx.stateMutex.Unlock()
 		log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
-		err := next(ctx, responseWriter, request)
-		if err != nil {
-			http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
-			log.Print(err)
-		}
+		next(ctx, responseWriter, request)
 	})
 }
 
 // GET /
-func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/html")
 	var sortedPeersList []WgPeer
 	for _, peer := range ctx.confFile.Peers {
 		sortedPeersList = append(sortedPeersList, peer)
 	}
 	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
-	return indexHtmlTpl.Execute(responseWriter, map[string]any{
+	err := indexHtmlTpl.Execute(responseWriter, map[string]any{
 		"peers": sortedPeersList,
 	})
+	if err != nil {
+		log.Printf("Templating error: %s", err)
+	}
 }
 
 // PUT /peer
-func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) {
 	requestBytes, err := io.ReadAll(request.Body)
 	if err != nil {
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, false)
+		return
 	}
 	var requestPeerObj WgPeer
 	err = json.Unmarshal(requestBytes, &requestPeerObj)
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, true)
+		return
 	}
 	err = requestPeerObj.validate()
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, true)
+		return
 	}
 
 	if _, ok := ctx.confFile.Peers[requestPeerObj.Pubkey]; ok {
 		ctx.confFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
 	} else {
-		http.Error(responseWriter, "Not Found", http.StatusNotFound)
-		return nil
+		sendHttpError(responseWriter, err, 404, true)
+		return
 	}
 	err = ctx.confFile.save(ctx.ifname)
 	if err != nil {
-		return err
+		sendHttpError(responseWriter, err, 500, false)
+		return
 	}
 
 	responseWriter.WriteHeader(http.StatusOK)
-	return nil
 }
 
 // POST /peer
-func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) {
 	requestBytes, err := io.ReadAll(request.Body)
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, false)
+		return
 	}
 	var requestPeerObj WgPeer
 	err = json.Unmarshal(requestBytes, &requestPeerObj)
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, true)
+		return
 	}
 	err = requestPeerObj.validate()
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, true)
+		return
 	}
 
 	if _, ok := ctx.confFile.Peers[requestPeerObj.Pubkey]; ok {
-		http.Error(responseWriter, "Peer already exists", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, fmt.Errorf("Peer already exists"), 400, true)
+		return
 	} else {
 		ctx.confFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
 	}
 	err = ctx.confFile.save(ctx.ifname)
 	if err != nil {
-		return err
+		sendHttpError(responseWriter, err, 500, true)
+		return
 	}
 
 	responseWriter.WriteHeader(http.StatusOK)
-	return nil
 }
 
 // DELETE /peer/{pubkey}
 // pubkey must be encoded as URL-safe base64 (and not the standard Base64 WireGuard keys are usually encoded as)
-func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) {
 	pubkeyBase64Url := request.PathValue("pubkey")
 	pubkeyDecoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyBase64Url)
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, true)
+		return
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
 
 	delete(ctx.confFile.Peers, pubkey)
 	err = ctx.confFile.save(ctx.ifname)
 	if err != nil {
-		return err
+		sendHttpError(responseWriter, err, 500, false)
+		return
 	}
 
 	responseWriter.WriteHeader(http.StatusOK)
-	return nil
 }
 
 func getFirstIPInNetwork(network *net.IPNet) net.IP {
@@ -234,13 +239,12 @@ func computePeerIPs(peerAllowedIps string, cfg *WgConf) (*string, error) {
 }
 
 // GET /peer/{pubkeyPreimage}
-func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) {
 	pubkeyPreimageBase64Url := request.PathValue("pubkeyPreimage")
 	pubkeyPreimageDecoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, true)
+		return
 	}
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
@@ -248,10 +252,11 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 	if peer, ok := ctx.confFile.Peers[pubkey]; ok {
 		peerAddrs, err := computePeerIPs(peer.AllowedIps, ctx.confFile)
 		if err != nil {
-			return err
+			sendHttpError(responseWriter, err, 500, false)
+			return
 		}
 		responseWriter.Header().Set("Content-Type", "text/html")
-		return enrolmentHtmlTpl.Execute(responseWriter, map[string]any{
+		err = enrolmentHtmlTpl.Execute(responseWriter, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
 			"advertisedDNS":      ctx.advertisedDNS,
@@ -259,14 +264,17 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 			"advertisedNetworks": ctx.advertisedNetworks,
 			"advertisedEndpoint": ctx.advertisedEndpoint,
 		})
+		if err != nil {
+			log.Printf("Templating error: %s", err)
+		}
 	} else {
-		http.Error(responseWriter, "Not Found", http.StatusNotFound)
-		return nil
+		sendHttpError(responseWriter, fmt.Errorf("Not Found"), 404, false)
+		return
 	}
 }
 
 // PUT /peer/{pubkeyPreimage}
-func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) error {
+func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, request *http.Request) {
 	type SetPeerPubkeyRequest struct {
 		NewPubKey string
 		NewPSK    *string
@@ -275,9 +283,8 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	pubkeyPreimageBase64Url := request.PathValue("pubkeyPreimage")
 	pubkeyPreimageDecoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if err != nil {
-		log.Print(err)
-		http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-		return nil
+		sendHttpError(responseWriter, err, 400, false)
+		return
 	}
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
@@ -290,29 +297,25 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	if peerObj, ok := ctx.confFile.Peers[pubkey]; ok {
 		requestBytes, err := io.ReadAll(request.Body)
 		if err != nil {
-			log.Print(err)
-			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-			return nil
+			sendHttpError(responseWriter, err, 400, false)
+			return
 		}
 		var requestObj SetPeerPubkeyRequest
 		err = json.Unmarshal(requestBytes, &requestObj)
 		if err != nil {
-			log.Print(err)
-			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-			return nil
+			sendHttpError(responseWriter, err, 400, true)
+			return
 		}
 		err = validateWireguardKey(requestObj.NewPubKey)
 		if err != nil {
-			log.Print(err)
-			http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-			return nil
+			sendHttpError(responseWriter, err, 400, true)
+			return
 		}
 		if requestObj.NewPSK != nil {
 			err = validateWireguardKey(requestObj.NewPubKey)
 			if err != nil {
-				log.Print(err)
-				http.Error(responseWriter, "Bad Request", http.StatusBadRequest)
-				return nil
+				sendHttpError(responseWriter, err, 400, true)
+				return
 			}
 		}
 		delete(ctx.confFile.Peers, pubkey)
@@ -321,15 +324,15 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 		ctx.confFile.Peers[requestObj.NewPubKey] = peerObj
 		err = ctx.confFile.save(ctx.ifname)
 		if err != nil {
-			return err
+			sendHttpError(responseWriter, err, 500, false)
+			return
 		}
 	} else {
-		http.Error(responseWriter, "Not Found", http.StatusNotFound)
-		return nil
+		sendHttpError(responseWriter, fmt.Errorf("Not Found"), 404, true)
+		return
 	}
 
 	responseWriter.WriteHeader(http.StatusOK)
-	return nil
 }
 
 func listenAndServe(
