@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"html/template"
 	"log"
 	"net"
 	"os"
@@ -10,15 +9,6 @@ import (
 )
 
 func main() {
-	indexHtmlTpl, err := template.New("index.html").Parse(indexHtmlTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
-	enrolmentHtmlTpl, err := template.New("enrolment.html").Parse(enrolmentHtmlTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// Get parameters
 	listenOnPtr := flag.String("listen", ":8080", "Address and port to bind on")
 	ifnamePtr := flag.String("ifname", "", "WireGuard interface to manage. It is assumed to already exist.")
@@ -44,7 +34,7 @@ func main() {
 	if len(*advertisedEndpoint) == 0 || len(*advertisedNetworks) == 0 || len(*advertisedPublicKey) == 0 {
 		log.Fatal("-endpoint, -networks, and -pubkey are required.")
 	}
-	err = validateWireguardKey(*advertisedPublicKey)
+	err := validateWireguardKey(*advertisedPublicKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,8 +58,6 @@ func main() {
 		log.Fatal(err)
 	}
 	ctx := ServerContext{
-		indexHtmlTpl:        indexHtmlTpl,
-		enrolmentHtmlTpl:    enrolmentHtmlTpl,
 		confFile:            confFile,
 		advertisedEndpoint:  *advertisedEndpoint,
 		advertisedNetworks:  *advertisedNetworks,

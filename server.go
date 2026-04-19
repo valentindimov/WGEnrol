@@ -17,18 +17,26 @@ import (
 	"sync"
 )
 
+func compileTemplateOrPanic(name string, source string) *template.Template {
+	result, err := template.New("index.html").Parse(source)
+	if err != nil {
+		panic(err)
+	}
+	return result
+}
+
 //go:embed index.html
-var indexHtmlTemplate string
+var indexHtmlTemplateString string
+var indexHtmlTpl = compileTemplateOrPanic("index.html", indexHtmlTemplateString)
 
 //go:embed enrolment.html
-var enrolmentHtmlTemplate string
+var enrolmentHtmlTemplateString string
+var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTemplateString)
 
 type ServerContext struct {
 	stateMutex          sync.Mutex
 	ifname              *string
 	confFile            *WgConf
-	indexHtmlTpl        *template.Template
-	enrolmentHtmlTpl    *template.Template
 	advertisedEndpoint  string
 	advertisedNetworks  string
 	advertisedPublicKey string
@@ -83,7 +91,7 @@ func handleGetRoot(ctx *ServerContext, responseWriter http.ResponseWriter, reque
 		sortedPeersList = append(sortedPeersList, peer)
 	}
 	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
-	return ctx.indexHtmlTpl.Execute(responseWriter, map[string]any{
+	return indexHtmlTpl.Execute(responseWriter, map[string]any{
 		"peers": sortedPeersList,
 	})
 }
@@ -243,7 +251,7 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 			return err
 		}
 		responseWriter.Header().Set("Content-Type", "text/html")
-		return ctx.enrolmentHtmlTpl.Execute(responseWriter, map[string]any{
+		return enrolmentHtmlTpl.Execute(responseWriter, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
 			"advertisedDNS":      ctx.advertisedDNS,
