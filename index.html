@@ -191,25 +191,24 @@
         document.getElementById("AddPeerDialogRegistrationLink").href = registrationLink;
         document.getElementById("AddPeerDialogRegistrationLink").innerText = registrationLink;
         document.getElementById("AddPeerDialogNameInput").focus();
-        document.getElementById("AddPeerDialogSaveButton").onclick = function() {
+        document.getElementById("AddPeerDialogSaveButton").onclick = async function() {
             const newPeerRequest = {
                 "Pubkey": pubkey.toBase64({"alphabet": "base64", "omitPadding": false}),
                 "AllowedIps": document.getElementById("AddPeerDialogIPInput").value,
                 "Comment": document.getElementById("AddPeerDialogNameInput").value
             };
             document.getElementById("AddPeerDialog").close();
-            fetch("/peer", {
-                method: "POST",
-                body: JSON.stringify(newPeerRequest)
-            }).then((response) => {
+            try {
+                let response = await fetch("/peer", {method: "POST", body: JSON.stringify(newPeerRequest)});
                 if (!response.ok) {
-                    alert(`Operation failed: ${response.status}`);
+                    let errorMessage = await response.text();
+                    throw new Error(`${response.status} - ${errorMessage}`);
                 }
-            }).catch((error) => {
+            } catch(err) {
                 alert(`Operation failed: ${error}`);
-            }).finally(() => {
+            } finally {
                 window.location.reload();
-            });
+            }
         }
         document.getElementById("AddPeerDialogCancelButton").onclick = function() {
             document.getElementById("AddPeerDialog").close();
@@ -223,7 +222,7 @@
             const tableRow = event.target.parentNode;
             document.getElementById("EditFieldDialogInput").value = event.target.innerText;
             document.getElementById("EditFieldDialogInput").focus();
-            document.getElementById("EditFieldDialogSaveButton").onclick = function() {
+            document.getElementById("EditFieldDialogSaveButton").onclick = async function() {
                 event.target.innerText = document.getElementById("EditFieldDialogInput").value;
                 const editedPeerRequest = {
                     "Pubkey": tableRow.children[2].innerText,
@@ -231,18 +230,16 @@
                     "Comment": tableRow.children[0].innerText
                 };
                 document.getElementById("EditFieldDialog").close();
-                fetch("/peer", {
-                    method: "PUT",
-                    body: JSON.stringify(editedPeerRequest)
-                }).then((response) => {
+                try {
+                    let response = await fetch("/peer", {method: "PUT", body: JSON.stringify(editedPeerRequest)});
                     if (!response.ok) {
-                        alert(`Operation failed: ${response.status}`);
-                        window.location.reload();
+                        let errorMessage = await response.text();
+                        throw new Error(`${response.status} - ${errorMessage}`);
                     }
-                }).catch((error) => {
+                } catch(err) {
                     alert(`Operation failed: ${error}`);
                     window.location.reload();
-                });
+                }
             }
             document.getElementById("EditFieldDialog").showModal();
             event.stopPropagation();
@@ -259,23 +256,23 @@
     for (let i = 0; i < deleteButtons.length; i++) {
         button = deleteButtons.item(i);
         const tableRow = button.parentNode.parentNode;
-        button.onclick = function () {
+        button.onclick = async function () {
             if (window.confirm(`Are you sure you want to delete peer ${tableRow.children[0].innerText}?`)) {
                 target = Uint8Array.fromBase64(
                     tableRow.children[2].innerText, 
                     {"alphabet": "base64", "lastChunkHandling": "loose"}
                 ).toBase64({"alphabet": "base64url", "omitPadding": true});
-                fetch(`/peer/${target}`, { method: "DELETE" }).then((response) => {
+                try {
+                    let response = await fetch(`/peer/${target}`, { method: "DELETE" });
                     if (!response.ok) {
-                        alert(`Operation failed: ${response.status}`);
-                        window.location.reload();
-                    } else {
-                        tableRow.remove();
+                        let errorMessage = await response.text();
+                        throw new Error(`${response.status} - ${errorMessage}`);
                     }
-                }).catch((error) => {
+                    tableRow.remove();
+                } catch(err) {
                     alert(`Operation failed: ${error}`);
                     window.location.reload();
-                });
+                }
             }
         }
     }
