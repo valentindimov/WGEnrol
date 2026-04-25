@@ -2,36 +2,50 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type WgEnrolConfig struct {
 	Server struct {
-		ListenOn *string // required
+		ListenOn *string `yaml:"listenOn"` // required
 		Tls      struct {
 			Enabled  bool
-			CertFile *string // optional
-			KeyFile  *string // optional
+			CertFile *string `yaml:"certFile"` // optional
+			KeyFile  *string `yaml:"keyFile"`  // optional
 		}
 	}
 	Admin struct {
 		Username     *string  // required
-		PasswordHash *string  // required
-		IPFilter     []string // IP check disabled if this is omitted or empty
+		PasswordHash *string  `yaml:"passwordHash"` // required
+		IPFilter     []string `yaml:"ipFilter"`     // IP check disabled if this is omitted or empty
 	}
 	Wireguard struct {
 		ifname   *string  // optional
-		ConfFile *string  // required
+		ConfFile *string  `yaml:"confFile"` // required
 		Subnets  []string // required
 	}
 	Advertise struct {
 		Endpoint  *string  // required
-		PublicKey *string  // required
+		PublicKey *string  `yaml:"publicKey"` // required
 		Subnets   []string // required
-		Dns       *string  //optional
+		Dns       []string // optional
 	}
+}
+
+func validateIPList(input []string) error {
+	if len(input) > 0 {
+		for _, addr := range input {
+			_, _, err := net.ParseCIDR(strings.Trim(addr, " "))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func ParseConfigFile(path string) (*WgEnrolConfig, error) {
@@ -69,6 +83,22 @@ func ParseConfigFile(path string) (*WgEnrolConfig, error) {
 	}
 	if result.Advertise.PublicKey == nil {
 		return nil, fmt.Errorf("advertise.publicKey parameter is required")
+	}
+	err = validateIPList(result.Wireguard.Subnets)
+	if err != nil {
+		return nil, err
+	}
+	err = validateIPList(result.Advertise.Subnets)
+	if err != nil {
+		return nil, err
+	}
+	err = validateIPList(result.Admin.IPFilter)
+	if err != nil {
+		return nil, err
+	}
+	// Check additional constraints
+	if result.Server.Tls.Enabled && (result.Server.Tls.CertFile == nil || result.Server.Tls.KeyFile == nil) {
+		return nil, fmt.Errorf("server.tls.certFile and server.tls.keyFile are required when TLS is enabled")
 	}
 	// Done
 	return &result, nil

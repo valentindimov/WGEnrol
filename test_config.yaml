@@ -2,16 +2,17 @@ server:
   listenOn: "127.0.0.1:8080"
   tls:
     enabled: false
-    certFile: ""
-    keyFile: ""
+    # certFile: ""
+    # keyFile: ""
 
 admin:
   username: "admin"
-  passwordHash: "$argon2id$v=19$m=19,t=2,p=1$YmRBeVFmb0JnZllSOElLdA$c4vmCBc6XlRI9oEZuEFPEw" # "password"
+  passwordHash: "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8" # "password"
+  # ipFilter: []
 
 wireguard:
-  ifname: null
   confFile: "./test.conf"
+  # ifname: "wg0"
   subnets: 
     - "10.64.0.0/16"
 
@@ -20,4 +21,5 @@ advertise:
   endpoint: "127.0.0.1:51820"
   subnets: 
     - "10.64.0.0/16"
-  dns: null
+  # dns: 
+  #   - "10.64.0.1"
