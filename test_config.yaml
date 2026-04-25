@@ -1,0 +1,23 @@
+server:
+  listenOn: "127.0.0.1:8080"
+  tls:
+    enabled: false
+    certFile: ""
+    keyFile: ""
+
+admin:
+  username: "admin"
+  passwordHash: "$argon2id$v=19$m=19,t=2,p=1$YmRBeVFmb0JnZllSOElLdA$c4vmCBc6XlRI9oEZuEFPEw" # "password"
+
+wireguard:
+  ifname: null
+  confFile: "./test.conf"
+  subnets: 
+    - "10.64.0.0/16"
+
+advertise:
+  publicKey: "yIOKKpuzNrue8Kf+N2LCc1lB0wF60arlU1a3NPtpLiY=" # Private key: "qLtVXL2aKLSUtXw7Bs/6a2Fen8IryiQHzxgAyQHLK1I="
+  endpoint: "127.0.0.1:51820"
+  subnets: 
+    - "10.64.0.0/16"
+  dns: null
