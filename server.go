@@ -35,18 +35,14 @@ var enrolmentHtmlTemplateString string
 var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTemplateString)
 
 type ServerContext struct {
-	stateMutex          sync.Mutex
-	ifname              *string
-	confFile            *WgConf
-	advertisedEndpoint  string
-	advertisedNetworks  string
-	advertisedPublicKey string
-	advertisedDNS       *string
+	stateMutex sync.Mutex
+	confFile   *WgConf
+	config     *WgEnrolConfig
 }
 
-func basicAuthWrapper(next http.HandlerFunc, expectedUsername string, expectedPasswordSha256 string) http.HandlerFunc {
-	expectedUsernameHash := sha256.Sum256([]byte(expectedUsername))
-	expectedPasswordHash, err := hex.DecodeString(expectedPasswordSha256)
+func basicAuthWrapper(next http.HandlerFunc, ctx *ServerContext) http.HandlerFunc {
+	expectedUsernameHash := sha256.Sum256([]byte(*ctx.config.Admin.Username))
+	expectedPasswordHash, err := hex.DecodeString(*ctx.config.Admin.PasswordHash)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -132,7 +128,7 @@ func handleEditPeer(ctx *ServerContext, responseWriter http.ResponseWriter, requ
 		sendHttpError(responseWriter, err, 404, true)
 		return
 	}
-	err = ctx.confFile.save(ctx.ifname)
+	err = ctx.confFile.save(ctx.config.Wireguard.ifname)
 	if err != nil {
 		sendHttpError(responseWriter, err, 500, false)
 		return
@@ -166,7 +162,7 @@ func handleCreatePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 	} else {
 		ctx.confFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
 	}
-	err = ctx.confFile.save(ctx.ifname)
+	err = ctx.confFile.save(ctx.config.Wireguard.ifname)
 	if err != nil {
 		sendHttpError(responseWriter, err, 500, true)
 		return
@@ -187,7 +183,7 @@ func handleDeletePeer(ctx *ServerContext, responseWriter http.ResponseWriter, re
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
 
 	delete(ctx.confFile.Peers, pubkey)
-	err = ctx.confFile.save(ctx.ifname)
+	err = ctx.confFile.save(ctx.config.Wireguard.ifname)
 	if err != nil {
 		sendHttpError(responseWriter, err, 500, false)
 		return
@@ -259,10 +255,10 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, responseWriter http.Response
 		err = enrolmentHtmlTpl.Execute(responseWriter, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
-			"advertisedDNS":      ctx.advertisedDNS,
-			"serverPublicKey":    ctx.advertisedPublicKey,
-			"advertisedNetworks": ctx.advertisedNetworks,
-			"advertisedEndpoint": ctx.advertisedEndpoint,
+			"advertisedDNS":      strings.Join(ctx.config.Advertise.Dns, ","),
+			"serverPublicKey":    ctx.config.Advertise.PublicKey,
+			"advertisedNetworks": strings.Join(ctx.config.Advertise.Subnets, ","),
+			"advertisedEndpoint": ctx.config.Advertise.Endpoint,
 		})
 		if err != nil {
 			log.Printf("Templating error: %s", err)
@@ -322,7 +318,7 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 		peerObj.Pubkey = requestObj.NewPubKey
 		peerObj.PresharedKey = requestObj.NewPSK
 		ctx.confFile.Peers[requestObj.NewPubKey] = peerObj
-		err = ctx.confFile.save(ctx.ifname)
+		err = ctx.confFile.save(ctx.config.Wireguard.ifname)
 		if err != nil {
 			sendHttpError(responseWriter, err, 500, false)
 			return
@@ -335,28 +331,21 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 	responseWriter.WriteHeader(http.StatusOK)
 }
 
-func listenAndServe(
-	listenOnPtr *string,
-	tlscert *string,
-	tlskey *string,
-	ctx *ServerContext,
-	adminUser string,
-	adminPasswordHash string,
-) {
+func listenAndServe(ctx *ServerContext) {
 	// Admin panel functions
-	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("POST /peer", basicAuthWrapper(wrapFuncAsHandler(handleCreatePeer, ctx), adminUser, adminPasswordHash))
-	http.HandleFunc("DELETE /peer/{pubkey}", basicAuthWrapper(wrapFuncAsHandler(handleDeletePeer, ctx), adminUser, adminPasswordHash))
+	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, ctx), ctx))
+	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, ctx), ctx))
+	http.HandleFunc("POST /peer", basicAuthWrapper(wrapFuncAsHandler(handleCreatePeer, ctx), ctx))
+	http.HandleFunc("DELETE /peer/{pubkey}", basicAuthWrapper(wrapFuncAsHandler(handleDeletePeer, ctx), ctx))
 	// Peer enrolment
 	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleGetPeerEnrolmentPage, ctx))
 	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleEnrolPeer, ctx))
 
 	var err error
-	if tlscert != nil && tlskey != nil {
-		err = http.ListenAndServeTLS(*listenOnPtr, *tlscert, *tlskey, nil)
+	if ctx.config.Server.Tls.CertFile != nil && ctx.config.Server.Tls.KeyFile != nil {
+		err = http.ListenAndServeTLS(*ctx.config.Server.ListenOn, *ctx.config.Server.Tls.CertFile, *ctx.config.Server.Tls.KeyFile, nil)
 	} else {
-		err = http.ListenAndServe(*listenOnPtr, nil)
+		err = http.ListenAndServe(*ctx.config.Server.ListenOn, nil)
 	}
 	if err != nil {
 		log.Fatal(err)
