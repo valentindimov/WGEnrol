@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -47,6 +48,17 @@ func adminFuncWrapper(next http.HandlerFunc, ctx *ServerContext) http.HandlerFun
 		log.Fatal(err)
 	}
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		host, _, err := net.SplitHostPort(request.RemoteAddr)
+		if err != nil {
+			log.Printf("Request parsing error: %s", err)
+			http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		if len(ctx.config.Admin.IPFilter) > 0 && !slices.Contains(ctx.config.Admin.IPFilter, host) {
+			log.Printf("Request from host %s failed IP filter", host)
+			http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		username, password, ok := request.BasicAuth()
 		if ok {
 			usernameHash := sha256.Sum256([]byte(username))
