@@ -40,7 +40,7 @@ type ServerContext struct {
 	config     *WgEnrolConfig
 }
 
-func basicAuthWrapper(next http.HandlerFunc, ctx *ServerContext) http.HandlerFunc {
+func adminFuncWrapper(next http.HandlerFunc, ctx *ServerContext) http.HandlerFunc {
 	expectedUsernameHash := sha256.Sum256([]byte(*ctx.config.Admin.Username))
 	expectedPasswordHash, err := hex.DecodeString(*ctx.config.Admin.PasswordHash)
 	if err != nil {
@@ -333,10 +333,10 @@ func handleEnrolPeer(ctx *ServerContext, responseWriter http.ResponseWriter, req
 
 func listenAndServe(ctx *ServerContext) {
 	// Admin panel functions
-	http.HandleFunc("GET /", basicAuthWrapper(wrapFuncAsHandler(handleGetRoot, ctx), ctx))
-	http.HandleFunc("PUT /peer", basicAuthWrapper(wrapFuncAsHandler(handleEditPeer, ctx), ctx))
-	http.HandleFunc("POST /peer", basicAuthWrapper(wrapFuncAsHandler(handleCreatePeer, ctx), ctx))
-	http.HandleFunc("DELETE /peer/{pubkey}", basicAuthWrapper(wrapFuncAsHandler(handleDeletePeer, ctx), ctx))
+	http.HandleFunc("GET /", adminFuncWrapper(wrapFuncAsHandler(handleGetRoot, ctx), ctx))
+	http.HandleFunc("PUT /peer", adminFuncWrapper(wrapFuncAsHandler(handleEditPeer, ctx), ctx))
+	http.HandleFunc("POST /peer", adminFuncWrapper(wrapFuncAsHandler(handleCreatePeer, ctx), ctx))
+	http.HandleFunc("DELETE /peer/{pubkey}", adminFuncWrapper(wrapFuncAsHandler(handleDeletePeer, ctx), ctx))
 	// Peer enrolment
 	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleGetPeerEnrolmentPage, ctx))
 	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapFuncAsHandler(handleEnrolPeer, ctx))
