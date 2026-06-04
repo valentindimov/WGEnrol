@@ -7,19 +7,19 @@ server:
 
 admin:
   username: "admin"
-  passwordHash: "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8" # "password"
+  passwordHash: "$2a$08$noE9l0k/bSRj0cyRaVsDsue4L2WEmHP9pHxfGOJ026xEttfFn3TFq" # "password"
   ipFilter: [ "127.0.0.0/8" ]
 
 wireguard:
   confFile: "./test.conf"
   # ifname: "wg0"
-  subnets: 
+  subnets:
     - "10.64.0.0/16"
 
 advertise:
   publicKey: "yIOKKpuzNrue8Kf+N2LCc1lB0wF60arlU1a3NPtpLiY=" # Private key: "qLtVXL2aKLSUtXw7Bs/6a2Fen8IryiQHzxgAyQHLK1I="
   endpoint: "127.0.0.1:51820"
-  subnets: 
+  subnets:
     - "10.64.0.0/16"
-  # dns: 
+  # dns:
   #   - "10.64.0.1"

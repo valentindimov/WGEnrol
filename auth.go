@@ -3,19 +3,16 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	expectedUsernameHash := sha256.Sum256([]byte(*ctx.Config.Admin.Username))
-	expectedPasswordHash, err := hex.DecodeString(*ctx.Config.Admin.PasswordHash)
-	if err != nil {
-		log.Fatal(err)
-	}
 	host, _, err := net.SplitHostPort(request.RemoteAddr)
 	if err != nil {
 		http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
@@ -42,10 +39,9 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 	username, password, ok := request.BasicAuth()
 	if ok {
 		usernameHash := sha256.Sum256([]byte(username))
-		passwordHash := sha256.Sum256([]byte(password))
 		usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
-		passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
-		if usernameMatch && passwordMatch {
+		passwordMatchErr := bcrypt.CompareHashAndPassword([]byte(*ctx.Config.Admin.PasswordHash), []byte(password))
+		if usernameMatch && passwordMatchErr == nil {
 			return nil
 		} else if len(username) == 0 && len(password) == 0 {
 			log.Printf("From %s: %s %s Logout\n", request.RemoteAddr, request.Method, request.URL.Path)
