@@ -3,10 +3,8 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -14,7 +12,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -42,44 +39,6 @@ type ServerContext struct {
 	config     *WgEnrolConfig
 }
 
-func adminFuncWrapper(next http.HandlerFunc, ctx *ServerContext) http.HandlerFunc {
-	expectedUsernameHash := sha256.Sum256([]byte(*ctx.config.Admin.Username))
-	expectedPasswordHash, err := hex.DecodeString(*ctx.config.Admin.PasswordHash)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
-		host, _, err := net.SplitHostPort(request.RemoteAddr)
-		if err != nil {
-			log.Printf("Request parsing error: %s", err)
-			http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		if len(ctx.config.Admin.IPFilter) > 0 && !slices.Contains(ctx.config.Admin.IPFilter, host) {
-			log.Printf("Request from host %s failed IP filter", host)
-			http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		username, password, ok := request.BasicAuth()
-		if ok {
-			usernameHash := sha256.Sum256([]byte(username))
-			passwordHash := sha256.Sum256([]byte(password))
-			usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
-			passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
-			if usernameMatch && passwordMatch {
-				next.ServeHTTP(responseWriter, request)
-				return
-			} else if len(username) == 0 && len(password) == 0 {
-				log.Printf("From %s: %s %s Logout\n", request.RemoteAddr, request.Method, request.URL.Path)
-			} else {
-				log.Printf("From %s: %s %s HTTP Basic Auth failed\n", request.RemoteAddr, request.Method, request.URL.Path)
-			}
-		}
-		responseWriter.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
-		http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
-	})
-}
-
 type HandlerError struct {
 	status  int
 	message *string
@@ -95,8 +54,19 @@ func WrapError(err error, status int, visible bool) *HandlerError {
 	return &HandlerError{status: status, visible: visible, message: &errMsg}
 }
 
-func wrapHandler(handler func(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError), ctx *ServerContext, contentType string) http.HandlerFunc {
+func wrapHandler(
+	handler func(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError),
+	ctx *ServerContext,
+	contentType string,
+	authenticated bool,
+) http.HandlerFunc {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		if authenticated {
+			if err := AuthenticateRequest(request, responseWriter, ctx); err != nil {
+				log.Printf(err.Error())
+				return
+			}
+		}
 		ctx.stateMutex.Lock()
 		defer ctx.stateMutex.Unlock()
 		log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
@@ -326,13 +296,13 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 
 func listenAndServe(ctx *ServerContext) {
 	// Admin panel functions
-	http.HandleFunc("GET /", adminFuncWrapper(wrapHandler(handleGetRoot, ctx, "text/html"), ctx))
-	http.HandleFunc("PUT /peer", adminFuncWrapper(wrapHandler(handleEditPeer, ctx, "text/plain"), ctx))
-	http.HandleFunc("POST /peer", adminFuncWrapper(wrapHandler(handleCreatePeer, ctx, "text/plain"), ctx))
-	http.HandleFunc("DELETE /peer/{pubkey}", adminFuncWrapper(wrapHandler(handleDeletePeer, ctx, "text/plain"), ctx))
+	http.HandleFunc("GET /", wrapHandler(handleGetRoot, ctx, "text/html", true))
+	http.HandleFunc("PUT /peer", wrapHandler(handleEditPeer, ctx, "text/plain", true))
+	http.HandleFunc("POST /peer", wrapHandler(handleCreatePeer, ctx, "text/plain", true))
+	http.HandleFunc("DELETE /peer/{pubkey}", wrapHandler(handleDeletePeer, ctx, "text/plain", true))
 	// Peer enrolment
-	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html"))
-	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapHandler(handleEnrolPeer, ctx, "text/plain"))
+	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html", false))
+	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapHandler(handleEnrolPeer, ctx, "text/plain", false))
 
 	var err error
 	if ctx.config.Server.Tls.CertFile != nil && ctx.config.Server.Tls.KeyFile != nil {
