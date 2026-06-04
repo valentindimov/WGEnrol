@@ -52,13 +52,12 @@ func validateIPList(input []string) ([]*net.IPNet, error) {
 
 func ParseConfigFile(path string) (*ServerContext, error) {
 	// Read and unmarshal the YAML config file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return nil, readErr
 	}
 	var result WgEnrolConfig
-	err = yaml.Unmarshal(data, &result)
-	if err != nil {
+	if err := yaml.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
 	// Check required fields
@@ -86,13 +85,13 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	if result.Advertise.PublicKey == nil {
 		return nil, fmt.Errorf("advertise.publicKey parameter is required")
 	}
-	_, err = validateIPList(result.Wireguard.Subnets)
-	if err != nil {
-		return nil, err
+	_, parseWgNetsErr := validateIPList(result.Wireguard.Subnets)
+	if parseWgNetsErr != nil {
+		return nil, parseWgNetsErr
 	}
-	_, err = validateIPList(result.Advertise.Subnets)
-	if err != nil {
-		return nil, err
+	_, parseAdvNetsErr := validateIPList(result.Advertise.Subnets)
+	if parseAdvNetsErr != nil {
+		return nil, parseAdvNetsErr
 	}
 	ipFilterNets, err := validateIPList(result.Admin.IPFilter)
 	if err != nil {
