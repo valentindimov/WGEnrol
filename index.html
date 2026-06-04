@@ -204,10 +204,9 @@
                     let errorMessage = await response.text();
                     throw new Error(`${response.status} - ${errorMessage}`);
                 }
-            } catch(err) {
-                alert(`Operation failed: ${error}`);
-            } finally {
                 window.location.reload();
+            } catch(err) {
+                alert(`Operation failed: ${err}`);
             }
         }
         document.getElementById("AddPeerDialogCancelButton").onclick = function() {
@@ -237,7 +236,8 @@
                         throw new Error(`${response.status} - ${errorMessage}`);
                     }
                 } catch(err) {
-                    alert(`Operation failed: ${error}`);
+                    alert(`Operation failed: ${err}`);
+                } finally {
                     window.location.reload();
                 }
             }
