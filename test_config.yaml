@@ -13,6 +13,7 @@ admin:
 smtp:
   enabled: false
   # host: "smtp.example.com"
+  # port: 587
   # user: "user@example.com"
   # password: "password123"
   # from: "user@example.com"

@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/smtp"
 	"sort"
 	"strings"
 	"sync"
@@ -161,7 +162,19 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 		return nil, WrapError(err, 500, true)
 	}
 	if ctx.Config.Smtp.Enabled && requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
-		// TODO: Send email with requestPeerObj.RegistrationLink to requestPeerObj.UserEmail
+		go func() {
+			log.Printf(fmt.Sprintf("Sending registration email to %s", *requestPeerObj.UserEmail))
+			auth := smtp.PlainAuth("", *ctx.Config.Smtp.User, *ctx.Config.Smtp.Password, *ctx.Config.Smtp.Host)
+			to := []string{*requestPeerObj.UserEmail}
+			msg := []byte(fmt.Sprintf("To: %s\r\n"+
+				"Subject: [WgEnrol] Registration Link\r\n"+
+				"\r\n"+
+				"A new WireGuard account was created for you.\r\n"+
+				"Click the following link to register: %s\r\n", *requestPeerObj.UserEmail, *requestPeerObj.RegistrationLink))
+			if err := smtp.SendMail(fmt.Sprintf("%s:%d", *ctx.Config.Smtp.Host, *ctx.Config.Smtp.Port), auth, *ctx.Config.Smtp.From, to, msg); err != nil {
+				log.Printf(fmt.Sprintf("Sending registration email to %s failed: %s", *requestPeerObj.UserEmail, err.Error()))
+			}
+		}()
 	}
 	return nil, nil
 }

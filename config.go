@@ -24,7 +24,12 @@ type WgEnrolConfig struct {
 		IPFilter     []string `yaml:"ipFilter"`     // IP check disabled if this is omitted or empty
 	}
 	Smtp struct {
-		Enabled bool // required
+		Enabled  bool    // required
+		Host     *string // required if enabled
+		User     *string // required if enabled
+		Password *string // required if enabled
+		From     *string // required if enabled
+		Port     *int    // required if enabled
 	}
 	Wireguard struct {
 		ifname   *string  // optional
@@ -72,6 +77,23 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	}
 	if result.Admin.PasswordHash == nil {
 		return nil, fmt.Errorf("admin.passwordHash parameter is required")
+	}
+	if result.Smtp.Enabled {
+		if result.Smtp.Host == nil {
+			return nil, fmt.Errorf("smtp.host parameter is required")
+		}
+		if result.Smtp.Port == nil {
+			return nil, fmt.Errorf("smtp.port parameter is required")
+		}
+		if result.Smtp.User == nil {
+			return nil, fmt.Errorf("smtp.user parameter is required")
+		}
+		if result.Smtp.Password == nil {
+			return nil, fmt.Errorf("smtp.password parameter is required")
+		}
+		if result.Smtp.From == nil {
+			return nil, fmt.Errorf("smtp.from parameter is required")
+		}
 	}
 	if result.Wireguard.ConfFile == nil {
 		return nil, fmt.Errorf("wireguard.confFile parameter is required")
