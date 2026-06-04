@@ -139,20 +139,29 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 	if readErr != nil {
 		return nil, WrapError(readErr, 400, false)
 	}
-	var requestPeerObj WgPeer
+	type SetPeerPubkeyRequest struct {
+		Peer             WgPeer
+		RegistrationLink *string
+		UserEmail        *string
+	}
+	var requestPeerObj SetPeerPubkeyRequest
 	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	if err := requestPeerObj.validate(); err != nil {
+	if err := requestPeerObj.Peer.validate(); err != nil {
+		log.Printf("Validation of %v failed.", requestPeerObj.Peer)
 		return nil, WrapError(err, 400, true)
 	}
-	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Pubkey]; ok {
+	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey]; ok {
 		return nil, WrapError(fmt.Errorf("Peer already exists"), 400, true)
 	} else {
-		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
+		ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey] = requestPeerObj.Peer
 	}
 	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 		return nil, WrapError(err, 500, true)
+	}
+	if ctx.Config.Smtp.Enabled && requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
+		// TODO: Send email with requestPeerObj.RegistrationLink to requestPeerObj.UserEmail
 	}
 	return nil, nil
 }
