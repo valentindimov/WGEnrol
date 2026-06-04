@@ -35,8 +35,10 @@ var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTem
 
 type ServerContext struct {
 	stateMutex sync.Mutex
-	confFile   *WgConf
-	config     *WgEnrolConfig
+	ConfFile   *WgConf
+	Config     *WgEnrolConfig
+
+	AdminIpFilter []*net.IPNet
 }
 
 type HandlerError struct {
@@ -91,7 +93,7 @@ func wrapHandler(
 // GET /
 func handleGetRoot(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
 	var sortedPeersList []WgPeer
-	for _, peer := range ctx.confFile.Peers {
+	for _, peer := range ctx.ConfFile.Peers {
 		sortedPeersList = append(sortedPeersList, peer)
 	}
 	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
@@ -118,12 +120,12 @@ func handleEditPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError)
 	if err := requestPeerObj.validate(); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	if _, ok := ctx.confFile.Peers[requestPeerObj.Pubkey]; ok {
-		ctx.confFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
+	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Pubkey]; ok {
+		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
 	} else {
 		return nil, WrapError(fmt.Errorf("Peer not found: %s", requestPeerObj.Pubkey), 404, true)
 	}
-	if err := ctx.confFile.save(ctx.config.Wireguard.ifname); err != nil {
+	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 		return nil, WrapError(err, 500, false)
 	}
 	return nil, nil
@@ -142,12 +144,12 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 	if err := requestPeerObj.validate(); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	if _, ok := ctx.confFile.Peers[requestPeerObj.Pubkey]; ok {
+	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Pubkey]; ok {
 		return nil, WrapError(fmt.Errorf("Peer already exists"), 400, true)
 	} else {
-		ctx.confFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
+		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
 	}
-	if err := ctx.confFile.save(ctx.config.Wireguard.ifname); err != nil {
+	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 		return nil, WrapError(err, 500, true)
 	}
 	return nil, nil
@@ -162,8 +164,8 @@ func handleDeletePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 		return nil, WrapError(decodeErr, 400, true)
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
-	delete(ctx.confFile.Peers, pubkey)
-	if err := ctx.confFile.save(ctx.config.Wireguard.ifname); err != nil {
+	delete(ctx.ConfFile.Peers, pubkey)
+	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 		return nil, WrapError(err, 500, false)
 	}
 	return nil, nil
@@ -221,8 +223,8 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
 
-	if peer, ok := ctx.confFile.Peers[pubkey]; ok {
-		peerAddrs, err := computePeerIPs(peer.AllowedIps, ctx.confFile)
+	if peer, ok := ctx.ConfFile.Peers[pubkey]; ok {
+		peerAddrs, err := computePeerIPs(peer.AllowedIps, ctx.ConfFile)
 		if err != nil {
 			return nil, WrapError(err, 500, false)
 		}
@@ -230,10 +232,10 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 		if err := enrolmentHtmlTpl.Execute(&response, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
-			"advertisedDNS":      strings.Join(ctx.config.Advertise.Dns, ","),
-			"serverPublicKey":    ctx.config.Advertise.PublicKey,
-			"advertisedNetworks": strings.Join(ctx.config.Advertise.Subnets, ","),
-			"advertisedEndpoint": ctx.config.Advertise.Endpoint,
+			"advertisedDNS":      strings.Join(ctx.Config.Advertise.Dns, ","),
+			"serverPublicKey":    ctx.Config.Advertise.PublicKey,
+			"advertisedNetworks": strings.Join(ctx.Config.Advertise.Subnets, ","),
+			"advertisedEndpoint": ctx.Config.Advertise.Endpoint,
 		}); err != nil {
 			return nil, WrapError(err, 500, false)
 		} else {
@@ -264,7 +266,7 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 	// - This proves that the PublicKey field is not a real public key, but a "pending" peer
 	// - Thus possession of the key preimage allows you to change the pubkey (and only the pubkey)
 
-	if peerObj, ok := ctx.confFile.Peers[pubkey]; ok {
+	if peerObj, ok := ctx.ConfFile.Peers[pubkey]; ok {
 		requestBytes, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
 			return nil, WrapError(readErr, 400, false)
@@ -281,11 +283,11 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 				return nil, WrapError(err, 400, true)
 			}
 		}
-		delete(ctx.confFile.Peers, pubkey)
+		delete(ctx.ConfFile.Peers, pubkey)
 		peerObj.Pubkey = requestObj.NewPubKey
 		peerObj.PresharedKey = requestObj.NewPSK
-		ctx.confFile.Peers[requestObj.NewPubKey] = peerObj
-		if err := ctx.confFile.save(ctx.config.Wireguard.ifname); err != nil {
+		ctx.ConfFile.Peers[requestObj.NewPubKey] = peerObj
+		if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 			return nil, WrapError(err, 500, false)
 		}
 	} else {
@@ -305,10 +307,10 @@ func listenAndServe(ctx *ServerContext) {
 	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapHandler(handleEnrolPeer, ctx, "text/plain", false))
 
 	var err error
-	if ctx.config.Server.Tls.CertFile != nil && ctx.config.Server.Tls.KeyFile != nil {
-		err = http.ListenAndServeTLS(*ctx.config.Server.ListenOn, *ctx.config.Server.Tls.CertFile, *ctx.config.Server.Tls.KeyFile, nil)
+	if ctx.Config.Server.Tls.CertFile != nil && ctx.Config.Server.Tls.KeyFile != nil {
+		err = http.ListenAndServeTLS(*ctx.Config.Server.ListenOn, *ctx.Config.Server.Tls.CertFile, *ctx.Config.Server.Tls.KeyFile, nil)
 	} else {
-		err = http.ListenAndServe(*ctx.config.Server.ListenOn, nil)
+		err = http.ListenAndServe(*ctx.Config.Server.ListenOn, nil)
 	}
 	if err != nil {
 		log.Fatal(err)

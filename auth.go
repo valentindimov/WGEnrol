@@ -8,12 +8,11 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"slices"
 )
 
 func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
-	expectedUsernameHash := sha256.Sum256([]byte(*ctx.config.Admin.Username))
-	expectedPasswordHash, err := hex.DecodeString(*ctx.config.Admin.PasswordHash)
+	expectedUsernameHash := sha256.Sum256([]byte(*ctx.Config.Admin.Username))
+	expectedPasswordHash, err := hex.DecodeString(*ctx.Config.Admin.PasswordHash)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -22,9 +21,23 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 		http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
 		return fmt.Errorf("Request parsing error: %s", err)
 	}
-	if len(ctx.config.Admin.IPFilter) > 0 && !slices.Contains(ctx.config.Admin.IPFilter, host) {
-		http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
-		return fmt.Errorf("Request from host %s failed IP filter", host)
+	hostIp := net.ParseIP(host)
+	if hostIp == nil {
+		http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
+		return fmt.Errorf("Request parsing error: %s", err)
+	}
+	if len(ctx.AdminIpFilter) > 0 {
+		ipMatches := false
+		for _, subnet := range ctx.AdminIpFilter {
+			if subnet.Contains(hostIp) {
+				ipMatches = true
+				break
+			}
+		}
+		if !ipMatches {
+			http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
+			return fmt.Errorf("Request from host %s failed IP filter", host)
+		}
 	}
 	username, password, ok := request.BasicAuth()
 	if ok {

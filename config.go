@@ -36,19 +36,21 @@ type WgEnrolConfig struct {
 	}
 }
 
-func validateIPList(input []string) error {
+func validateIPList(input []string) ([]*net.IPNet, error) {
+	nets := make([]*net.IPNet, 0, len(input))
 	if len(input) > 0 {
 		for _, addr := range input {
-			_, _, err := net.ParseCIDR(strings.Trim(addr, " "))
+			_, ipNet, err := net.ParseCIDR(strings.Trim(addr, " "))
 			if err != nil {
-				return err
+				return nil, err
 			}
+			nets = append(nets, ipNet)
 		}
 	}
-	return nil
+	return nets, nil
 }
 
-func ParseConfigFile(path string) (*WgEnrolConfig, error) {
+func ParseConfigFile(path string) (*ServerContext, error) {
 	// Read and unmarshal the YAML config file
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -84,15 +86,15 @@ func ParseConfigFile(path string) (*WgEnrolConfig, error) {
 	if result.Advertise.PublicKey == nil {
 		return nil, fmt.Errorf("advertise.publicKey parameter is required")
 	}
-	err = validateIPList(result.Wireguard.Subnets)
+	_, err = validateIPList(result.Wireguard.Subnets)
 	if err != nil {
 		return nil, err
 	}
-	err = validateIPList(result.Advertise.Subnets)
+	_, err = validateIPList(result.Advertise.Subnets)
 	if err != nil {
 		return nil, err
 	}
-	err = validateIPList(result.Admin.IPFilter)
+	ipFilterNets, err := validateIPList(result.Admin.IPFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +102,16 @@ func ParseConfigFile(path string) (*WgEnrolConfig, error) {
 	if result.Server.Tls.Enabled && (result.Server.Tls.CertFile == nil || result.Server.Tls.KeyFile == nil) {
 		return nil, fmt.Errorf("server.tls.certFile and server.tls.keyFile are required when TLS is enabled")
 	}
-	// Done
-	return &result, nil
+	// Done checking, construct server context and return
+	confFile, err := loadWgConf(*result.Wireguard.ConfFile)
+	if confFile == nil || err != nil {
+		return nil, err
+	}
+	ctx := ServerContext{
+		ConfFile: confFile,
+		Config:   &result,
+
+		AdminIpFilter: ipFilterNets,
+	}
+	return &ctx, nil
 }
