@@ -23,6 +23,9 @@ type WgEnrolConfig struct {
 		PasswordHash *string  `yaml:"passwordHash"` // required
 		IPFilter     []string `yaml:"ipFilter"`     // IP check disabled if this is omitted or empty
 	}
+	Smtp struct {
+		Enabled bool // required
+	}
 	Wireguard struct {
 		ifname   *string  // optional
 		ConfFile *string  `yaml:"confFile"` // required

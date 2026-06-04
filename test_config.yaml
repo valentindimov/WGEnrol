@@ -10,6 +10,13 @@ admin:
   passwordHash: "$2a$08$noE9l0k/bSRj0cyRaVsDsue4L2WEmHP9pHxfGOJ026xEttfFn3TFq" # "password"
   ipFilter: [ "127.0.0.0/8" ]
 
+smtp:
+  enabled: false
+  # host: "smtp.example.com"
+  # user: "user@example.com"
+  # password: "password123"
+  # from: "user@example.com"
+
 wireguard:
   confFile: "./test.conf"
   # ifname: "wg0"

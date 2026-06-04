@@ -75,6 +75,7 @@ func wrapHandler(
 		result, err := handler(ctx, request)
 		if err != nil {
 			// HTTP error response
+			log.Printf("From %s: %s %s - ERROR %s\n", request.RemoteAddr, request.Method, request.URL.Path, err.Error())
 			responseWriter.WriteHeader(err.status)
 			if err.visible {
 				responseWriter.Write([]byte(*err.message))
@@ -99,7 +100,8 @@ func handleGetRoot(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) 
 	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
 	var tplResult bytes.Buffer
 	if err := indexHtmlTpl.Execute(&tplResult, map[string]any{
-		"peers": sortedPeersList,
+		"peers":       sortedPeersList,
+		"smtpEnabled": ctx.Config.Smtp.Enabled,
 	}); err != nil {
 		return nil, WrapError(err, 500, false)
 	} else {
