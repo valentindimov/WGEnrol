@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -353,6 +354,15 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 	return nil, nil
 }
 
+func getCertificate(_ *tls.ClientHelloInfo, ctx *ServerContext) (*tls.Certificate, error) {
+	log.Printf("Called getCertificate!")
+	caFiles, err := tls.LoadX509KeyPair(*ctx.Config.Server.Tls.CertFile, *ctx.Config.Server.Tls.KeyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &caFiles, nil
+}
+
 func listenAndServe(ctx *ServerContext) {
 	// Admin panel functions
 	http.HandleFunc("GET /", wrapHandler(handleGetRoot, ctx, "text/html", true))
@@ -363,11 +373,19 @@ func listenAndServe(ctx *ServerContext) {
 	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html", false))
 	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapHandler(handleEnrolPeer, ctx, "text/plain", false))
 
+	// Define the server (still uses the DefaultServeMux handler which http.HandleFunc adds to)
+	server := http.Server{
+		Addr: *ctx.Config.Server.ListenOn,
+		TLSConfig: &tls.Config{
+			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) { return getCertificate(info, ctx) },
+		},
+	}
+
 	var err error
 	if ctx.Config.Server.Tls.CertFile != nil && ctx.Config.Server.Tls.KeyFile != nil {
-		err = http.ListenAndServeTLS(*ctx.Config.Server.ListenOn, *ctx.Config.Server.Tls.CertFile, *ctx.Config.Server.Tls.KeyFile, nil)
+		err = server.ListenAndServeTLS("", "")
 	} else {
-		err = http.ListenAndServe(*ctx.Config.Server.ListenOn, nil)
+		err = server.ListenAndServe()
 	}
 	if err != nil {
 		log.Fatal(err)

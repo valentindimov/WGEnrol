@@ -2,8 +2,8 @@ server:
   listenOn: "127.0.0.1:8080"
   tls:
     enabled: false
-    # certFile: ""
-    # keyFile: ""
+    # certFile: "test_cert.pem"
+    # keyFile: "test_key.pem"
 
 admin:
   username: "admin"
