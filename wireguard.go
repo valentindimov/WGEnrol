@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/ini.v1"
@@ -267,23 +268,29 @@ func (wgConf *WgConf) save(applyTo *string) error {
 	return nil
 }
 
-// FIXME: The fact we use net and not net/netip causes us to do a lot of ugly conversions here. I should port the whole thing to use net/netip.
-// func (wgConf *WgConf) getFreeIPs() ([]net.IP, error) {
-// 	myIps := make([]netip.Addr, 0, len(wgConf.InterfaceIPs))
-// 	for _, ip := range wgConf.InterfaceIPs {
-// 		ip, _ := netip.AddrFromSlice(ip)
-// 		myIps := append(myIps, ip)
-// 	}
-// 	ips := make([]net.IP, 0, len(wgConf.VpnNetworks))
-// 	for _, network := range wgConf.VpnNetworks {
-// 		network, _ := netip.ParsePrefix(network.String())
-// 		ipSearchLoop:
-// 		for ip := network.Addr(); network.Contains(ip); ip = ip.Next() {
-// 			if slices.Contains(myIps, ip) {
-// 				continue ipSearchLoop
-// 			}
-// 			for peer in
-// 		}
-// 	}
-// 	return ips, nil
-// }
+func (wgConf *WgConf) GetFreeIPs() ([]netip.Addr, error) {
+	ips := make([]netip.Addr, 0, len(wgConf.VpnNetworks))
+	for _, network := range wgConf.VpnNetworks {
+		network, _ := netip.ParsePrefix(network.String())
+		freeIPFound := false
+	ipSearchLoop:
+		for ip := network.Addr().Next(); network.Contains(ip); ip = ip.Next() {
+			if slices.Contains(wgConf.InterfaceIPs, ip) {
+				continue ipSearchLoop
+			}
+			for _, peer := range wgConf.Peers {
+				for _, peerNet := range peer.AllowedIps {
+					if peerNet.Contains(ip) {
+						continue ipSearchLoop
+					}
+				}
+			}
+			ips = append(ips, ip)
+			freeIPFound = true
+		}
+		if !freeIPFound {
+			return nil, fmt.Errorf("No free IP found for network %s", network.String())
+		}
+	}
+	return ips, nil
+}
