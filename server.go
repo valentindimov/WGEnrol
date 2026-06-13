@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/smtp"
@@ -103,13 +102,13 @@ type WgPeerDTO struct {
 }
 
 func (peerDTO *WgPeerDTO) fromDTO() (*WgPeer, error) {
-	allowedIPs := make([]*net.IPNet, 0, len(peerDTO.AllowedIps))
+	allowedIPs := make([]netip.Prefix, 0, len(peerDTO.AllowedIps))
 	for _, addr := range peerDTO.AllowedIps {
-		_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+		network, err := netip.ParsePrefix(strings.Trim(addr, " "))
 		if err != nil {
 			return nil, err
 		}
-		allowedIPs = append(allowedIPs, network)
+		allowedIPs = append(allowedIPs, network.Masked())
 	}
 	return &WgPeer{
 		Pubkey:       peerDTO.Pubkey,
@@ -230,22 +229,17 @@ func handleDeletePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 	return nil, nil
 }
 
-func getFirstIPInNetwork(network *net.IPNet) net.IP {
-	ones, bits := network.Mask.Size()
-	if ones == bits {
-		return network.IP
+func getFirstIPInNetwork(network netip.Prefix) netip.Addr {
+	network = network.Masked()
+	if network.IsSingleIP() {
+		return network.Addr()
 	} else {
-		networkIPMasked := make([]byte, len(network.IP))
-		for i := range networkIPMasked {
-			networkIPMasked[i] = network.IP[i] & network.Mask[i]
-		}
-		networkIPMasked[len(networkIPMasked)-1] |= 1
-		return networkIPMasked
+		return network.Addr().Next()
 	}
 }
 
-func computePeerIPs(peerAllowedIps []*net.IPNet, cfg *WgConf) (*string, error) {
-	ips := make([]net.IP, 0, len(peerAllowedIps))
+func computePeerIPs(peerAllowedIps []netip.Prefix, cfg *WgConf) (*string, error) {
+	ips := make([]netip.Addr, 0, len(peerAllowedIps))
 	for _, network := range peerAllowedIps {
 		ips = append(ips, getFirstIPInNetwork(network))
 	}
@@ -253,10 +247,7 @@ func computePeerIPs(peerAllowedIps []*net.IPNet, cfg *WgConf) (*string, error) {
 	for _, ip := range ips {
 		for _, network := range cfg.VpnNetworks {
 			if network.Contains(ip) {
-				ipWithNet := net.IPNet{
-					IP:   ip,
-					Mask: network.Mask,
-				}
+				ipWithNet := netip.PrefixFrom(ip, network.Bits())
 				peerNetworks = append(peerNetworks, ipWithNet.String())
 			}
 		}

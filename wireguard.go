@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +16,7 @@ import (
 type WgPeer struct {
 	Pubkey       string
 	PresharedKey *string
-	AllowedIps   []*net.IPNet
+	AllowedIps   []netip.Prefix
 	Comment      string
 }
 
@@ -37,8 +37,8 @@ type WgConf struct {
 	filePath     string
 	file         *ini.File
 	Peers        map[string]WgPeer
-	VpnNetworks  []*net.IPNet
-	InterfaceIPs []net.IP
+	VpnNetworks  []netip.Prefix
+	InterfaceIPs []netip.Addr
 }
 
 func validateWireguardKey(input string) error {
@@ -92,8 +92,8 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 	interfaceSection.Comment = "# This file is managed automatically.\n# Do not edit it, your changes may get overwritten."
 
 	// Step 2: Determine VPN networks
-	networksList := make([]*net.IPNet, 0)
-	ipsList := make([]net.IP, 0)
+	networksList := make([]netip.Prefix, 0)
+	ipsList := make([]netip.Addr, 0)
 	if interfaceSection.HasKey("Address") {
 		val, err := interfaceSection.GetKey("Address")
 		if err != nil {
@@ -105,12 +105,12 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		}
 		addrs := strings.SplitSeq(networksStr, ",")
 		for addr := range addrs {
-			ip, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+			network, err := netip.ParsePrefix(strings.Trim(addr, " "))
 			if err != nil {
 				return nil, err
 			}
-			networksList = append(networksList, network)
-			ipsList = append(ipsList, ip)
+			networksList = append(networksList, network.Masked())
+			ipsList = append(ipsList, network.Addr())
 		}
 	} else {
 		return nil, fmt.Errorf("Could not find Address key in Interface section.")
@@ -144,13 +144,13 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 					allowedIPsStr = strings.TrimSpace(val.Value())
 				}
 				allowedIPsStrList := strings.SplitSeq(allowedIPsStr, ",")
-				allowedIPs := make([]*net.IPNet, 0)
+				allowedIPs := make([]netip.Prefix, 0)
 				for addr := range allowedIPsStrList {
-					_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+					network, err := netip.ParsePrefix(strings.Trim(addr, " "))
 					if err != nil {
 						return nil, err
 					}
-					allowedIPs = append(allowedIPs, network)
+					allowedIPs = append(allowedIPs, network.Masked())
 				}
 				// If the peer has a PresharedKey, read that too
 				var presharedKey *string

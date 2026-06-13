@@ -52,7 +52,7 @@ func validateIPNetList(input []string) ([]netip.Prefix, error) {
 			if err != nil {
 				return nil, err
 			}
-			nets = append(nets, ipNet)
+			nets = append(nets, ipNet.Masked())
 		}
 	}
 	return nets, nil
