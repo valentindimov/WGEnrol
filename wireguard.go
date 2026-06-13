@@ -34,10 +34,11 @@ func (peer *WgPeer) toDTO() *WgPeerDTO {
 }
 
 type WgConf struct {
-	filePath    string
-	file        *ini.File
-	Peers       map[string]WgPeer
-	VpnNetworks []*net.IPNet
+	filePath     string
+	file         *ini.File
+	Peers        map[string]WgPeer
+	VpnNetworks  []*net.IPNet
+	InterfaceIPs []net.IP
 }
 
 func validateWireguardKey(input string) error {
@@ -92,6 +93,7 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 
 	// Step 2: Determine VPN networks
 	networksList := make([]*net.IPNet, 0)
+	ipsList := make([]net.IP, 0)
 	if interfaceSection.HasKey("Address") {
 		val, err := interfaceSection.GetKey("Address")
 		if err != nil {
@@ -103,11 +105,12 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		}
 		addrs := strings.SplitSeq(networksStr, ",")
 		for addr := range addrs {
-			_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+			ip, network, err := net.ParseCIDR(strings.Trim(addr, " "))
 			if err != nil {
 				return nil, err
 			}
 			networksList = append(networksList, network)
+			ipsList = append(ipsList, ip)
 		}
 	} else {
 		return nil, fmt.Errorf("Could not find Address key in Interface section.")
@@ -176,10 +179,11 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		return nil, err
 	}
 	result := WgConf{
-		filePath:    filePathAbs,
-		file:        cfg,
-		Peers:       peersMap,
-		VpnNetworks: networksList,
+		filePath:     filePathAbs,
+		file:         cfg,
+		Peers:        peersMap,
+		VpnNetworks:  networksList,
+		InterfaceIPs: ipsList,
 	}
 	return &result, nil
 }
