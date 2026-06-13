@@ -19,9 +19,8 @@ type WgEnrolConfig struct {
 		}
 	}
 	Admin struct {
-		Username     *string  // required
-		PasswordHash *string  `yaml:"passwordHash"` // required
-		IPFilter     []string `yaml:"ipFilter"`     // IP check disabled if this is omitted or empty
+		IPFilter []string          `yaml:"ipFilter"` // IP check disabled if this is omitted or empty
+		Users    map[string]string `yaml:"users"`    // maps username to password hash (argon2)
 	}
 	Smtp struct {
 		Enabled  bool    // required
@@ -70,12 +69,6 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	// Check required fields
 	if result.Server.ListenOn == nil {
 		return nil, fmt.Errorf("server.listenOn parameter is required")
-	}
-	if result.Admin.Username == nil {
-		return nil, fmt.Errorf("admin.username parameter is required")
-	}
-	if result.Admin.PasswordHash == nil {
-		return nil, fmt.Errorf("admin.passwordHash parameter is required")
 	}
 	if result.Smtp.Enabled {
 		if result.Smtp.Host == nil {

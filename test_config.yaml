@@ -6,9 +6,9 @@ server:
     # keyFile: "test_key.pem"
 
 admin:
-  username: "admin"
-  passwordHash: "$2a$08$noE9l0k/bSRj0cyRaVsDsue4L2WEmHP9pHxfGOJ026xEttfFn3TFq" # "password"
   ipFilter: [ "127.0.0.0/8" ]
+  users:
+    admin: "$2a$08$noE9l0k/bSRj0cyRaVsDsue4L2WEmHP9pHxfGOJ026xEttfFn3TFq" # "password"
 
 smtp:
   enabled: false
