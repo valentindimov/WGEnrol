@@ -5,35 +5,30 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
+	"net/netip"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
 func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	expectedUsernameHash := sha256.Sum256([]byte(*ctx.Config.Admin.Username))
-	host, _, err := net.SplitHostPort(request.RemoteAddr)
+	hostPort, err := netip.ParseAddrPort(request.RemoteAddr)
 	if err != nil {
-		http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
-		return fmt.Errorf("Request parsing error: %s", err)
-	}
-	hostIp := net.ParseIP(host)
-	if hostIp == nil {
 		http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
 		return fmt.Errorf("Request parsing error: %s", err)
 	}
 	if len(ctx.AdminIpFilter) > 0 {
 		ipMatches := false
 		for _, subnet := range ctx.AdminIpFilter {
-			if subnet.Contains(hostIp) {
+			if subnet.Contains(hostPort.Addr().AsSlice()) {
 				ipMatches = true
 				break
 			}
 		}
 		if !ipMatches {
 			http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
-			return fmt.Errorf("Request from host %s failed IP filter", host)
+			return fmt.Errorf("Request from host %s failed IP filter", hostPort.Addr().String())
 		}
 	}
 	username, password, ok := request.BasicAuth()
