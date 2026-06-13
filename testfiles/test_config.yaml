@@ -2,8 +2,8 @@ server:
   listenOn: "127.0.0.1:8080"
   tls:
     enabled: false
-    # certFile: "test_cert.pem"
-    # keyFile: "test_key.pem"
+    # certFile: "testfiles/test_cert.pem"
+    # keyFile: "testfiles/test_key.pem"
 
 admin:
   ipFilter: [ "127.0.0.0/8" ]
@@ -19,7 +19,7 @@ smtp:
   # from: "user@example.com"
 
 wireguard:
-  confFile: "./test.conf"
+  confFile: "testfiles/test.conf"
   # ifname: "wg0"
 
 advertise:
