@@ -20,7 +20,13 @@ import (
 
 func compileTemplateOrPanic(name string, source string) *template.Template {
 	result, err := template.New(name).Funcs(template.FuncMap{
-		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
+		"subnetListToString": func(netList []netip.Prefix) string {
+			peerIpsStrList := make([]string, 0, len(netList))
+			for _, prefix := range netList {
+				peerIpsStrList = append(peerIpsStrList, prefix.String())
+			}
+			return strings.Join(peerIpsStrList, ",")
+		},
 	}).Parse(source)
 	if err != nil {
 		panic(err)
@@ -97,18 +103,13 @@ func wrapHandler(
 type WgPeerDTO struct {
 	Pubkey       string
 	PresharedKey *string
-	AllowedIps   []string
 	Comment      string
 }
 
-func (peerDTO *WgPeerDTO) fromDTO() (*WgPeer, error) {
-	allowedIPs := make([]netip.Prefix, 0, len(peerDTO.AllowedIps))
-	for _, addr := range peerDTO.AllowedIps {
-		network, err := netip.ParsePrefix(strings.Trim(addr, " "))
-		if err != nil {
-			return nil, err
-		}
-		allowedIPs = append(allowedIPs, network.Masked())
+func (peerDTO *WgPeerDTO) fromDTO(ctx *ServerContext) (*WgPeer, error) {
+	allowedIPs, err := ctx.ConfFile.GetAllowedIPs()
+	if err != nil {
+		return nil, err
 	}
 	return &WgPeer{
 		Pubkey:       peerDTO.Pubkey,
@@ -120,9 +121,9 @@ func (peerDTO *WgPeerDTO) fromDTO() (*WgPeer, error) {
 
 // GET /
 func handleGetRoot(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
-	var sortedPeersList []WgPeerDTO
+	var sortedPeersList []WgPeer
 	for _, peer := range ctx.ConfFile.Peers {
-		sortedPeersList = append(sortedPeersList, *peer.toDTO())
+		sortedPeersList = append(sortedPeersList, peer)
 	}
 	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
 	var tplResult bytes.Buffer
@@ -146,7 +147,7 @@ func handleEditPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError)
 	if err := json.Unmarshal(requestBytes, &requestPeerObjDTO); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	requestPeerObj, err := requestPeerObjDTO.fromDTO()
+	requestPeerObj, err := requestPeerObjDTO.fromDTO(ctx)
 	if err != nil {
 		return nil, WrapError(readErr, 400, true)
 	}
@@ -179,7 +180,7 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	peerObj, err := requestPeerObj.Peer.fromDTO()
+	peerObj, err := requestPeerObj.Peer.fromDTO(ctx)
 	if err != nil {
 		return nil, WrapError(err, 400, true)
 	}

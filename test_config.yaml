@@ -21,8 +21,6 @@ smtp:
 wireguard:
   confFile: "./test.conf"
   # ifname: "wg0"
-  subnets:
-    - "10.64.0.0/16"
 
 advertise:
   publicKey: "yIOKKpuzNrue8Kf+N2LCc1lB0wF60arlU1a3NPtpLiY=" # Private key: "qLtVXL2aKLSUtXw7Bs/6a2Fen8IryiQHzxgAyQHLK1I="

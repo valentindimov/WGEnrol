@@ -121,7 +121,7 @@
             {{- range .peers }}
             <tr class="peersListEntry visible">
                 <td class="editableField">{{ .Comment }}</td>
-                <td class="editableField">{{ join ", " .AllowedIps }}</td>
+                <td>{{ subnetListToString .AllowedIps }}</td>
                 <td style="color: #848588;">{{ .Pubkey }}</td>
                 <td><button class="deletePeerButton">Delete</button></td>
             </tr>
@@ -150,10 +150,6 @@
                 <tr>
                     <th scope="col">Peer Name:</th>
                     <td><input type="text" id="AddPeerDialogNameInput" /></td>
-                </tr>
-                <tr>
-                    <th scope="col">Peer Subnets:<br>(e.g. "10.64.1.2/32")</th>
-                    <td><input type="text" id="AddPeerDialogIPInput" /></td>
                 </tr>
                 <tr {{ if not .smtpEnabled }}style="display: none;"{{ end }}>
                     <th scope="col">User email:<br>(can be left empty)</th>
@@ -193,7 +189,6 @@
         }
         registrationLink = `${registrationLink}peer/${preimage.toBase64({"alphabet": "base64url", "omitPadding": true})}`;
         document.getElementById("AddPeerDialogNameInput").value = "";
-        document.getElementById("AddPeerDialogIPInput").value = "";
         document.getElementById("AddPeerDialogEmailInput").value = "";
         document.getElementById("AddPeerDialogRegistrationLink").href = registrationLink;
         document.getElementById("AddPeerDialogRegistrationLink").innerText = registrationLink;
@@ -202,7 +197,6 @@
             const newPeerRequest = {
                 "Peer": {
                     "Pubkey": pubkey.toBase64({"alphabet": "base64", "omitPadding": false}),
-                    "AllowedIps": document.getElementById("AddPeerDialogIPInput").value.split(",").map((s) => s.trim()),
                     "Comment": document.getElementById("AddPeerDialogNameInput").value
                 },
                 "RegistrationLink": registrationLink
@@ -238,7 +232,6 @@
                 event.target.innerText = document.getElementById("EditFieldDialogInput").value;
                 const editedPeerRequest = {
                     "Pubkey": tableRow.children[2].innerText,
-                    "AllowedIps": tableRow.children[1].innerText.split(",").map((s) => s.trim()),
                     "Comment": tableRow.children[0].innerText
                 };
                 document.getElementById("EditFieldDialog").close();

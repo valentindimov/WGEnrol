@@ -29,7 +29,6 @@ func (peer *WgPeer) toDTO() *WgPeerDTO {
 	return &WgPeerDTO{
 		Pubkey:       peer.Pubkey,
 		PresharedKey: peer.PresharedKey,
-		AllowedIps:   allowedIPsStrList,
 		Comment:      peer.Comment,
 	}
 }
@@ -268,8 +267,8 @@ func (wgConf *WgConf) save(applyTo *string) error {
 	return nil
 }
 
-func (wgConf *WgConf) GetFreeIPs() ([]netip.Addr, error) {
-	ips := make([]netip.Addr, 0, len(wgConf.VpnNetworks))
+func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
+	ips := make([]netip.Prefix, 0, len(wgConf.VpnNetworks))
 	for _, network := range wgConf.VpnNetworks {
 		network, _ := netip.ParsePrefix(network.String())
 		freeIPFound := false
@@ -285,8 +284,9 @@ func (wgConf *WgConf) GetFreeIPs() ([]netip.Addr, error) {
 					}
 				}
 			}
-			ips = append(ips, ip)
+			ips = append(ips, netip.PrefixFrom(ip, ip.BitLen()))
 			freeIPFound = true
+			break ipSearchLoop
 		}
 		if !freeIPFound {
 			return nil, fmt.Errorf("No free IP found for network %s", network.String())

@@ -32,9 +32,8 @@ type WgEnrolConfig struct {
 		Port     *int    // required if enabled
 	}
 	Wireguard struct {
-		ifname   *string  // optional
-		ConfFile *string  `yaml:"confFile"` // required
-		Subnets  []string // required
+		ifname   *string // optional
+		ConfFile *string `yaml:"confFile"` // required
 	}
 	Advertise struct {
 		Endpoint  *string  // required
@@ -98,9 +97,6 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	if result.Wireguard.ConfFile == nil {
 		return nil, fmt.Errorf("wireguard.confFile parameter is required")
 	}
-	if len(result.Wireguard.Subnets) == 0 {
-		return nil, fmt.Errorf("wireguard.subnets parameter is required and cannot be empty")
-	}
 	if result.Advertise.Endpoint == nil {
 		return nil, fmt.Errorf("advertise.endpoints parameter is required")
 	}
@@ -109,10 +105,6 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	}
 	if result.Advertise.PublicKey == nil {
 		return nil, fmt.Errorf("advertise.publicKey parameter is required")
-	}
-	_, parseWgNetsErr := validateIPNetList(result.Wireguard.Subnets)
-	if parseWgNetsErr != nil {
-		return nil, parseWgNetsErr
 	}
 	_, parseAdvNetsErr := validateIPNetList(result.Advertise.Subnets)
 	if parseAdvNetsErr != nil {
