@@ -201,7 +201,7 @@ func getFirstIPInNetwork(network *net.IPNet) net.IP {
 		return network.IP
 	} else {
 		networkIPMasked := make([]byte, len(network.IP))
-		for i := 0; i < len(networkIPMasked); i++ {
+		for i := range networkIPMasked {
 			networkIPMasked[i] = network.IP[i] & network.Mask[i]
 		}
 		networkIPMasked[len(networkIPMasked)-1] |= 1
