@@ -27,5 +27,4 @@ advertise:
   endpoint: "127.0.0.1:51820"
   additionalSubnets:
     - "10.164.0.0/16"
-  # dns:
-  #   - "10.64.0.1"
+  advertiseDNS: false

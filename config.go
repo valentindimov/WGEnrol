@@ -39,7 +39,7 @@ type WgEnrolConfig struct {
 		Endpoint          *string  // required
 		PublicKey         *string  `yaml:"publicKey"`         // required
 		AdditionalSubnets []string `yaml:"additionalSubnets"` // optional
-		Dns               []string // optional
+		AdvertiseDNS      bool     `yaml:"advertiseDNS"`      // optional
 	}
 }
 

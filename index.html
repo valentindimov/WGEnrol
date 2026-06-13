@@ -275,9 +275,10 @@
                         throw new Error(`${response.status} - ${errorMessage}`);
                     }
                     tableRow.remove();
+                    // FIXME: When we haven't updated the page (so the pubkey we have is still just a hash but the peer has already registered) this breaks
+                    window.location.reload();
                 } catch(err) {
                     alert(`Operation failed: ${error}`);
-                    window.location.reload();
                 }
             }
         }
