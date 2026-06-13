@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"strings"
 
@@ -44,11 +44,11 @@ type WgEnrolConfig struct {
 	}
 }
 
-func validateIPList(input []string) ([]*net.IPNet, error) {
-	nets := make([]*net.IPNet, 0, len(input))
+func validateIPNetList(input []string) ([]netip.Prefix, error) {
+	nets := make([]netip.Prefix, 0, len(input))
 	if len(input) > 0 {
 		for _, addr := range input {
-			_, ipNet, err := net.ParseCIDR(strings.Trim(addr, " "))
+			ipNet, err := netip.ParsePrefix(strings.Trim(addr, " "))
 			if err != nil {
 				return nil, err
 			}
@@ -110,15 +110,15 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	if result.Advertise.PublicKey == nil {
 		return nil, fmt.Errorf("advertise.publicKey parameter is required")
 	}
-	_, parseWgNetsErr := validateIPList(result.Wireguard.Subnets)
+	_, parseWgNetsErr := validateIPNetList(result.Wireguard.Subnets)
 	if parseWgNetsErr != nil {
 		return nil, parseWgNetsErr
 	}
-	_, parseAdvNetsErr := validateIPList(result.Advertise.Subnets)
+	_, parseAdvNetsErr := validateIPNetList(result.Advertise.Subnets)
 	if parseAdvNetsErr != nil {
 		return nil, parseAdvNetsErr
 	}
-	ipFilterNets, err := validateIPList(result.Admin.IPFilter)
+	ipFilterNets, err := validateIPNetList(result.Admin.IPFilter)
 	if err != nil {
 		return nil, err
 	}

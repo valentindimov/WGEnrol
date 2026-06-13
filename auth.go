@@ -21,7 +21,7 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 	if len(ctx.AdminIpFilter) > 0 {
 		ipMatches := false
 		for _, subnet := range ctx.AdminIpFilter {
-			if subnet.Contains(hostPort.Addr().AsSlice()) {
+			if subnet.Contains(hostPort.Addr()) {
 				ipMatches = true
 				break
 			}

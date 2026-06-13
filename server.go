@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/smtp"
 	"sort"
 	"strings"
@@ -41,7 +42,7 @@ type ServerContext struct {
 	ConfFile   *WgConf
 	Config     *WgEnrolConfig
 
-	AdminIpFilter []*net.IPNet
+	AdminIpFilter []netip.Prefix
 }
 
 type HandlerError struct {

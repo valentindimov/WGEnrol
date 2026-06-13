@@ -266,3 +266,24 @@ func (wgConf *WgConf) save(applyTo *string) error {
 	}
 	return nil
 }
+
+// FIXME: The fact we use net and not net/netip causes us to do a lot of ugly conversions here. I should port the whole thing to use net/netip.
+// func (wgConf *WgConf) getFreeIPs() ([]net.IP, error) {
+// 	myIps := make([]netip.Addr, 0, len(wgConf.InterfaceIPs))
+// 	for _, ip := range wgConf.InterfaceIPs {
+// 		ip, _ := netip.AddrFromSlice(ip)
+// 		myIps := append(myIps, ip)
+// 	}
+// 	ips := make([]net.IP, 0, len(wgConf.VpnNetworks))
+// 	for _, network := range wgConf.VpnNetworks {
+// 		network, _ := netip.ParsePrefix(network.String())
+// 		ipSearchLoop:
+// 		for ip := network.Addr(); network.Contains(ip); ip = ip.Next() {
+// 			if slices.Contains(myIps, ip) {
+// 				continue ipSearchLoop
+// 			}
+// 			for peer in
+// 		}
+// 	}
+// 	return ips, nil
+// }
