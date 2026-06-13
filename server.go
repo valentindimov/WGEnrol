@@ -273,12 +273,16 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 			return nil, WrapError(err, 500, false)
 		}
 		var response bytes.Buffer
+		vpnNetworksStr := make([]string, 0, len(ctx.ConfFile.VpnNetworks))
+		for _, network := range ctx.ConfFile.VpnNetworks {
+			vpnNetworksStr = append(vpnNetworksStr, network.String())
+		}
 		if err := enrolmentHtmlTpl.Execute(&response, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
 			"advertisedDNS":      strings.Join(ctx.Config.Advertise.Dns, ","),
 			"serverPublicKey":    ctx.Config.Advertise.PublicKey,
-			"advertisedNetworks": strings.Join(ctx.Config.Advertise.Subnets, ","),
+			"advertisedNetworks": strings.Join(append(vpnNetworksStr, ctx.Config.Advertise.AdditionalSubnets...), ","),
 			"advertisedEndpoint": ctx.Config.Advertise.Endpoint,
 		}); err != nil {
 			return nil, WrapError(err, 500, false)
