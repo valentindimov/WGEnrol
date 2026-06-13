@@ -223,6 +223,9 @@ func handleDeletePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 		return nil, WrapError(decodeErr, 400, true)
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
+	if _, ok := ctx.ConfFile.Peers[pubkey]; !ok {
+		return nil, WrapError(fmt.Errorf("Peer not found."), 404, true)
+	}
 	delete(ctx.ConfFile.Peers, pubkey)
 	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 		return nil, WrapError(err, 500, false)
