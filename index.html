@@ -121,7 +121,7 @@
             {{- range .peers }}
             <tr class="peersListEntry visible">
                 <td class="editableField">{{ .Comment }}</td>
-                <td class="editableField">{{ .AllowedIps }}</td>
+                <td class="editableField">{{ join ", " .AllowedIps }}</td>
                 <td style="color: #848588;">{{ .Pubkey }}</td>
                 <td><button class="deletePeerButton">Delete</button></td>
             </tr>
@@ -202,7 +202,7 @@
             const newPeerRequest = {
                 "Peer": {
                     "Pubkey": pubkey.toBase64({"alphabet": "base64", "omitPadding": false}),
-                    "AllowedIps": document.getElementById("AddPeerDialogIPInput").value,
+                    "AllowedIps": document.getElementById("AddPeerDialogIPInput").value.split(",").map((s) => s.trim()),
                     "Comment": document.getElementById("AddPeerDialogNameInput").value
                 },
                 "RegistrationLink": registrationLink
@@ -238,7 +238,7 @@
                 event.target.innerText = document.getElementById("EditFieldDialogInput").value;
                 const editedPeerRequest = {
                     "Pubkey": tableRow.children[2].innerText,
-                    "AllowedIps": tableRow.children[1].innerText,
+                    "AllowedIps": tableRow.children[1].innerText.split(",").map((s) => s.trim()),
                     "Comment": tableRow.children[0].innerText
                 };
                 document.getElementById("EditFieldDialog").close();

@@ -19,7 +19,9 @@ import (
 )
 
 func compileTemplateOrPanic(name string, source string) *template.Template {
-	result, err := template.New(name).Parse(source)
+	result, err := template.New(name).Funcs(template.FuncMap{
+		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
+	}).Parse(source)
 	if err != nil {
 		panic(err)
 	}
@@ -92,11 +94,35 @@ func wrapHandler(
 	})
 }
 
+type WgPeerDTO struct {
+	Pubkey       string
+	PresharedKey *string
+	AllowedIps   []string
+	Comment      string
+}
+
+func (peerDTO *WgPeerDTO) fromDTO() (*WgPeer, error) {
+	allowedIPs := make([]*net.IPNet, 0, len(peerDTO.AllowedIps))
+	for _, addr := range peerDTO.AllowedIps {
+		_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+		if err != nil {
+			return nil, err
+		}
+		allowedIPs = append(allowedIPs, network)
+	}
+	return &WgPeer{
+		Pubkey:       peerDTO.Pubkey,
+		PresharedKey: peerDTO.PresharedKey,
+		AllowedIps:   allowedIPs,
+		Comment:      peerDTO.Comment,
+	}, nil
+}
+
 // GET /
 func handleGetRoot(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
-	var sortedPeersList []WgPeer
+	var sortedPeersList []WgPeerDTO
 	for _, peer := range ctx.ConfFile.Peers {
-		sortedPeersList = append(sortedPeersList, peer)
+		sortedPeersList = append(sortedPeersList, *peer.toDTO())
 	}
 	sort.Slice(sortedPeersList, func(i, j int) bool { return sortedPeersList[i].Comment < sortedPeersList[j].Comment })
 	var tplResult bytes.Buffer
@@ -116,15 +142,19 @@ func handleEditPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError)
 	if readErr != nil {
 		return nil, WrapError(readErr, 400, false)
 	}
-	var requestPeerObj WgPeer
-	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
+	var requestPeerObjDTO WgPeerDTO
+	if err := json.Unmarshal(requestBytes, &requestPeerObjDTO); err != nil {
 		return nil, WrapError(err, 400, true)
+	}
+	requestPeerObj, err := requestPeerObjDTO.fromDTO()
+	if err != nil {
+		return nil, WrapError(readErr, 400, true)
 	}
 	if err := requestPeerObj.validate(); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
 	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Pubkey]; ok {
-		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = requestPeerObj
+		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = *requestPeerObj
 	} else {
 		return nil, WrapError(fmt.Errorf("Peer not found: %s", requestPeerObj.Pubkey), 404, true)
 	}
@@ -141,7 +171,7 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 		return nil, WrapError(readErr, 400, false)
 	}
 	type SetPeerPubkeyRequest struct {
-		Peer             WgPeer
+		Peer             WgPeerDTO
 		RegistrationLink *string
 		UserEmail        *string
 	}
@@ -149,14 +179,18 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	if err := requestPeerObj.Peer.validate(); err != nil {
+	peerObj, err := requestPeerObj.Peer.fromDTO()
+	if err != nil {
+		return nil, WrapError(err, 400, true)
+	}
+	if err := peerObj.validate(); err != nil {
 		log.Printf("Validation of %v failed.", requestPeerObj.Peer)
 		return nil, WrapError(err, 400, true)
 	}
 	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey]; ok {
 		return nil, WrapError(fmt.Errorf("Peer already exists"), 400, true)
 	} else {
-		ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey] = requestPeerObj.Peer
+		ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey] = *peerObj
 	}
 	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
 		return nil, WrapError(err, 500, true)
@@ -209,17 +243,10 @@ func getFirstIPInNetwork(network *net.IPNet) net.IP {
 	}
 }
 
-func computePeerIPs(peerAllowedIps string, cfg *WgConf) (*string, error) {
-	ips := make([]net.IP, 0)
-	if len(strings.Trim(peerAllowedIps, " ")) > 0 {
-		addrs := strings.SplitSeq(peerAllowedIps, ",")
-		for addr := range addrs {
-			_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
-			if err != nil {
-				return nil, err
-			}
-			ips = append(ips, getFirstIPInNetwork(network))
-		}
+func computePeerIPs(peerAllowedIps []*net.IPNet, cfg *WgConf) (*string, error) {
+	ips := make([]net.IP, 0, len(peerAllowedIps))
+	for _, network := range peerAllowedIps {
+		ips = append(ips, getFirstIPInNetwork(network))
 	}
 	peerNetworks := make([]string, 0)
 	for _, ip := range ips {

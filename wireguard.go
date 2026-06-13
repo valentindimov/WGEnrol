@@ -16,8 +16,21 @@ import (
 type WgPeer struct {
 	Pubkey       string
 	PresharedKey *string
-	AllowedIps   string
+	AllowedIps   []*net.IPNet
 	Comment      string
+}
+
+func (peer *WgPeer) toDTO() *WgPeerDTO {
+	allowedIPsStrList := make([]string, 0, len(peer.AllowedIps))
+	for _, network := range peer.AllowedIps {
+		allowedIPsStrList = append(allowedIPsStrList, network.String())
+	}
+	return &WgPeerDTO{
+		Pubkey:       peer.Pubkey,
+		PresharedKey: peer.PresharedKey,
+		AllowedIps:   allowedIPsStrList,
+		Comment:      peer.Comment,
+	}
 }
 
 type WgConf struct {
@@ -49,15 +62,7 @@ func (peer *WgPeer) validate() error {
 			return err
 		}
 	}
-	if len(strings.Trim(peer.AllowedIps, " ")) > 0 {
-		addrs := strings.SplitSeq(peer.AllowedIps, ",")
-		for addr := range addrs {
-			_, _, err = net.ParseCIDR(strings.Trim(addr, " "))
-			if err != nil {
-				return err
-			}
-		}
-	} else {
+	if len(peer.AllowedIps) <= 0 {
 		return fmt.Errorf("AllowedIPs cannot be empty.")
 	}
 	return nil
@@ -127,13 +132,22 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 				}
 				comment = strings.TrimSpace(comment)
 				// Extract AllowedIPs. This can be missing, in which case it's an empty list.
-				allowedIPs := ""
+				allowedIPsStr := ""
 				if section.HasKey("AllowedIPs") {
 					val, err = section.GetKey("AllowedIPs")
 					if err != nil {
 						return nil, err
 					}
-					allowedIPs = strings.TrimSpace(val.Value())
+					allowedIPsStr = strings.TrimSpace(val.Value())
+				}
+				allowedIPsStrList := strings.SplitSeq(allowedIPsStr, ",")
+				allowedIPs := make([]*net.IPNet, 0)
+				for addr := range allowedIPsStrList {
+					_, network, err := net.ParseCIDR(strings.Trim(addr, " "))
+					if err != nil {
+						return nil, err
+					}
+					allowedIPs = append(allowedIPs, network)
 				}
 				// If the peer has a PresharedKey, read that too
 				var presharedKey *string
@@ -204,7 +218,11 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		if err != nil {
 			return err
 		}
-		_, err = sec.NewKey("AllowedIPs", peer.AllowedIps)
+		allowedIPsStrList := make([]string, 0, len(peer.AllowedIps))
+		for _, network := range peer.AllowedIps {
+			allowedIPsStrList = append(allowedIPsStrList, network.String())
+		}
+		_, err = sec.NewKey("AllowedIPs", strings.Join(allowedIPsStrList, ","))
 		if err != nil {
 			return err
 		}
