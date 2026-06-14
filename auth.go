@@ -52,5 +52,5 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 	}
 	responseWriter.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
 	http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
-	return nil
+	return fmt.Errorf("Authorization failed")
 }
