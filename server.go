@@ -122,7 +122,7 @@ func listenAndServe(ctx *ServerContext) {
 	}
 
 	var err error
-	if ctx.Config.Server.Tls.CertFile != nil && ctx.Config.Server.Tls.KeyFile != nil {
+	if ctx.Config.Server.Tls.Enabled {
 		err = server.ListenAndServeTLS("", "")
 	} else {
 		err = server.ListenAndServe()
