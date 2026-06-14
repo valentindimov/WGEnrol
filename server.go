@@ -95,7 +95,6 @@ func wrapHandler(
 }
 
 func getCertificate(_ *tls.ClientHelloInfo, ctx *ServerContext) (*tls.Certificate, error) {
-	log.Printf("Called getCertificate!")
 	caFiles, err := tls.LoadX509KeyPair(*ctx.Config.Server.Tls.CertFile, *ctx.Config.Server.Tls.KeyFile)
 	if err != nil {
 		return nil, err
