@@ -21,18 +21,6 @@ type WgPeer struct {
 	Comment      string
 }
 
-func (peer *WgPeer) toDTO() *WgPeerDTO {
-	allowedIPsStrList := make([]string, 0, len(peer.AllowedIps))
-	for _, network := range peer.AllowedIps {
-		allowedIPsStrList = append(allowedIPsStrList, network.String())
-	}
-	return &WgPeerDTO{
-		Pubkey:       peer.Pubkey,
-		PresharedKey: peer.PresharedKey,
-		Comment:      peer.Comment,
-	}
-}
-
 type WgConf struct {
 	filePath     string
 	file         *ini.File

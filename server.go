@@ -68,7 +68,7 @@ func wrapHandler(
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		if authenticated {
 			if err := AuthenticateRequest(request, responseWriter, ctx); err != nil {
-				log.Printf(err.Error())
+				log.Printf("%s", err.Error())
 				return
 			}
 		}
