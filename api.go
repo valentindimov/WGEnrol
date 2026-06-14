@@ -74,7 +74,7 @@ func handleEditPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError)
 	} else {
 		return nil, WrapError(fmt.Errorf("Peer not found: %s", requestPeerObj.Pubkey), 404, true)
 	}
-	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
+	if err := ctx.ConfFile.save(ctx.Config.Wireguard.Ifname); err != nil {
 		return nil, WrapError(err, 500, false)
 	}
 	return nil, nil
@@ -108,7 +108,7 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 	} else {
 		ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey] = *peerObj
 	}
-	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
+	if err := ctx.ConfFile.save(ctx.Config.Wireguard.Ifname); err != nil {
 		return nil, WrapError(err, 500, true)
 	}
 	if ctx.Config.Smtp.Enabled && requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
@@ -142,7 +142,7 @@ func handleDeletePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 		return nil, WrapError(fmt.Errorf("Peer not found."), 404, true)
 	}
 	delete(ctx.ConfFile.Peers, pubkey)
-	if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
+	if err := ctx.ConfFile.save(ctx.Config.Wireguard.Ifname); err != nil {
 		return nil, WrapError(err, 500, false)
 	}
 	return nil, nil
@@ -259,7 +259,7 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 		peerObj.Pubkey = requestObj.NewPubKey
 		peerObj.PresharedKey = requestObj.NewPSK
 		ctx.ConfFile.Peers[requestObj.NewPubKey] = peerObj
-		if err := ctx.ConfFile.save(ctx.Config.Wireguard.ifname); err != nil {
+		if err := ctx.ConfFile.save(ctx.Config.Wireguard.Ifname); err != nil {
 			return nil, WrapError(err, 500, false)
 		}
 	} else {

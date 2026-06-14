@@ -31,7 +31,7 @@ type WgEnrolConfig struct {
 		Port     *int    // required if enabled
 	}
 	Wireguard struct {
-		ifname   *string // optional
+		Ifname   *string // optional
 		ConfFile *string `yaml:"confFile"` // required
 	}
 	Advertise struct {

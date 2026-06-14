@@ -239,7 +239,7 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		if err != nil {
 			return err
 		}
-		syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/dev/fd/0")
+		syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/proc/self/fd/0")
 		syncCmd.Stdin = stripCmdOut
 		syncCmd.Start()
 		stripCmd.Start()
