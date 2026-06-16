@@ -176,6 +176,7 @@ func computePeerIPs(peerAllowedIps []netip.Prefix, cfg *WgConf) (*string, error)
 }
 
 // GET /peer/{pubkeyPreimage}
+// pubkeyPreimage must be a Base64-URL-encoded string and a valid preimage for a public key stored in the WireGuard configuration
 func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
 	pubkeyPreimageBase64Url := r.PathValue("pubkeyPreimage")
 	pubkeyPreimageDecoded, decodeErr := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
