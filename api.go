@@ -22,7 +22,7 @@ type WgPeerDTO struct {
 }
 
 func (peerDTO *WgPeerDTO) fromDTO(ctx *ServerContext) (*WgPeer, error) {
-	allowedIPs, err := ctx.ConfFile.GetAllowedIPs()
+	allowedIPs, err := ctx.GetAllowedIPs()
 	if err != nil {
 		return nil, err
 	}
@@ -196,11 +196,13 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 		for _, network := range ctx.ConfFile.VpnNetworks {
 			vpnNetworksStr = append(vpnNetworksStr, network.String())
 		}
-		advertisedDNS := make([]string, 0, len(ctx.ConfFile.InterfaceIPs))
+		var advertisedDNS []string
 		if ctx.Config.Advertise.AdvertiseDNS {
-			for _, ip := range ctx.ConfFile.InterfaceIPs {
-				advertisedDNS = append(advertisedDNS, ip.String())
+			deviceAddrs, err := ctx.GetDeviceAddrsAsStrings()
+			if err != nil {
+				return nil, WrapError(err, 500, false)
 			}
+			advertisedDNS = *deviceAddrs
 		}
 		advertisedPublicKey, err := ctx.GetDevicePubkey()
 		if err != nil {

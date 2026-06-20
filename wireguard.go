@@ -25,11 +25,10 @@ type WgPeer struct {
 }
 
 type WgConf struct {
-	filePath     string
-	file         *ini.File
-	Peers        map[string]WgPeer
-	VpnNetworks  []netip.Prefix
-	InterfaceIPs []netip.Addr
+	filePath    string
+	file        *ini.File
+	Peers       map[string]WgPeer
+	VpnNetworks []netip.Prefix
 }
 
 func validateWireguardKey(input string) error {
@@ -84,7 +83,6 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 
 	// Step 2: Determine VPN networks
 	networksList := make([]netip.Prefix, 0)
-	ipsList := make([]netip.Addr, 0)
 	if interfaceSection.HasKey("Address") {
 		val, err := interfaceSection.GetKey("Address")
 		if err != nil {
@@ -101,7 +99,6 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 				return nil, err
 			}
 			networksList = append(networksList, network.Masked())
-			ipsList = append(ipsList, network.Addr())
 		}
 	} else {
 		return nil, fmt.Errorf("Could not find Address key in Interface section.")
@@ -170,11 +167,10 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		return nil, err
 	}
 	result := WgConf{
-		filePath:     filePathAbs,
-		file:         cfg,
-		Peers:        peersMap,
-		VpnNetworks:  networksList,
-		InterfaceIPs: ipsList,
+		filePath:    filePathAbs,
+		file:        cfg,
+		Peers:       peersMap,
+		VpnNetworks: networksList,
 	}
 	return &result, nil
 }
@@ -301,17 +297,21 @@ func (ctx *ServerContext) Commit() error {
 	return ctx.applyDeviceConfig()
 }
 
-func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
-	ips := make([]netip.Prefix, 0, len(wgConf.VpnNetworks))
-	for _, network := range wgConf.VpnNetworks {
+func (ctx *ServerContext) GetAllowedIPs() ([]netip.Prefix, error) {
+	ips := make([]netip.Prefix, 0, len(ctx.ConfFile.VpnNetworks))
+	interfaceIPs, err := ctx.GetDeviceAddrs()
+	if err != nil {
+		return nil, err
+	}
+	for _, network := range ctx.ConfFile.VpnNetworks {
 		network, _ := netip.ParsePrefix(network.String())
 		freeIPFound := false
 	ipSearchLoop:
 		for ip := network.Addr().Next(); network.Contains(ip); ip = ip.Next() {
-			if slices.Contains(wgConf.InterfaceIPs, ip) {
+			if slices.Contains(*interfaceIPs, ip) {
 				continue ipSearchLoop
 			}
-			for _, peer := range wgConf.Peers {
+			for _, peer := range ctx.ConfFile.Peers {
 				for _, peerNet := range peer.AllowedIps {
 					if peerNet.Contains(ip) {
 						continue ipSearchLoop
@@ -340,5 +340,42 @@ func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
 		return nil, err
 	}
 	result := base64.StdEncoding.EncodeToString(device.PublicKey[:])
+	return &result, nil
+}
+
+func (ctx *ServerContext) GetDeviceAddrsAsStrings() (*[]string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, iface := range ifaces {
+		if iface.Name == *ctx.Config.Wireguard.Ifname {
+			result := make([]string, 0, len(ifaces))
+			ifaceAddrs, err := iface.Addrs()
+			if err != nil {
+				return nil, err
+			}
+			for _, addr := range ifaceAddrs {
+				result = append(result, addr.String())
+			}
+			return &result, nil
+		}
+	}
+	return nil, fmt.Errorf("Interface %s not found.", *ctx.Config.Wireguard.Ifname)
+}
+
+func (ctx *ServerContext) GetDeviceAddrs() (*[]netip.Addr, error) {
+	addrStrings, err := ctx.GetDeviceAddrsAsStrings()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]netip.Addr, 0, len(*addrStrings))
+	for _, addrStr := range *addrStrings {
+		addrParsed, err := netip.ParseAddr(addrStr)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, addrParsed)
+	}
 	return &result, nil
 }
