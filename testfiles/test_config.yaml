@@ -20,7 +20,7 @@ smtp:
 
 wireguard:
   confFile: "testfiles/test.conf"
-  ifname: "wg0"
+  ifname: "wgenrol-test"
 
 advertise:
   endpoint: "127.0.0.1:51820"
