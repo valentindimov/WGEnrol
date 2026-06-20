@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"net/smtp"
 	"sort"
 	"strings"
+	"time"
 )
 
 type WgPeerDTO struct {
@@ -271,6 +273,63 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 		}
 	} else {
 		return nil, WrapError(fmt.Errorf("Not Found"), 404, true)
+	}
+	return nil, nil
+}
+
+// GET /login
+func handleGetLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+	var tplResult bytes.Buffer
+	if err := loginHtmlTpl.Execute(&tplResult, map[string]any{}); err != nil {
+		return nil, WrapError(err, 500, false)
+	} else {
+		return tplResult.Bytes(), nil
+	}
+}
+
+// POST /login
+func handlePostLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+	type LoginRequest struct {
+		Username string
+		Password string
+	}
+	requestBytes, readErr := io.ReadAll(r.Body)
+	if readErr != nil {
+		return nil, WrapError(readErr, 400, false)
+	}
+	var requestObj LoginRequest
+	if err := json.Unmarshal(requestBytes, &requestObj); err != nil {
+		return nil, WrapError(err, 400, true)
+	}
+	// TODO: check user/password
+
+	newToken := rand.Text()
+	ctx.ValidSessionTokens[newToken] = time.Now().Add(time.Hour)
+	r.AddCookie(&http.Cookie{
+		Name:     "session",
+		Value:    base64.URLEncoding.EncodeToString([]byte(newToken)),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   ctx.Config.Server.Tls.Enabled,
+	})
+
+	tokensToRemove := make([]string, 0, len(ctx.ValidSessionTokens))
+	for k, v := range ctx.ValidSessionTokens {
+		if v.Compare(time.Now()) < 0 {
+			tokensToRemove = append(tokensToRemove, k)
+		}
+	}
+	for _, k := range tokensToRemove {
+		delete(ctx.ValidSessionTokens, k)
+	}
+
+	return nil, nil
+}
+
+// POST /logout
+func handlePostLogout(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+	if token, err := GetSessionToken(r); token != nil && err == nil {
+		delete(ctx.ValidSessionTokens, *token)
 	}
 	return nil, nil
 }

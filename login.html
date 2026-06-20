@@ -89,8 +89,8 @@
     async function submitPassword() {
         try {
             let response = await fetch("/login", {method: "POST", body: JSON.stringify({
-                "username": document.getElementById("UsernameInput").value,
-                "password": document.getElementById("PasswordInput").value,
+                "Username": document.getElementById("UsernameInput").value,
+                "Password": document.getElementById("PasswordInput").value,
             })});
             if (!response.ok) {
                 let errorMessage = await response.text();

@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"time"
 )
 
 func compileTemplateOrPanic(name string, source string) *template.Template {
@@ -36,12 +37,17 @@ var indexHtmlTpl = compileTemplateOrPanic("index.html", indexHtmlTemplateString)
 var enrolmentHtmlTemplateString string
 var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTemplateString)
 
+//go:embed login.html
+var loginHtmlTemplateString string
+var loginHtmlTpl = compileTemplateOrPanic("login.html", enrolmentHtmlTemplateString)
+
 type ServerContext struct {
 	stateMutex sync.Mutex
 	ConfFile   *WgConf
 	Config     *WgEnrolConfig
 
-	AdminIpFilter []netip.Prefix
+	AdminIpFilter      []netip.Prefix
+	ValidSessionTokens map[string]time.Time // Maps the token to the expiry time
 }
 
 type HandlerError struct {
@@ -103,6 +109,10 @@ func getCertificate(_ *tls.ClientHelloInfo, ctx *ServerContext) (*tls.Certificat
 }
 
 func listenAndServe(ctx *ServerContext) {
+	// Login/logout
+	http.HandleFunc("GET /login", wrapHandler(handleGetLogin, ctx, "text/html", false))
+	http.HandleFunc("POST /login", wrapHandler(handlePostLogin, ctx, "text/plain", false))
+	http.HandleFunc("POST /logout", wrapHandler(handlePostLogout, ctx, "text/plain", true))
 	// Admin panel functions
 	http.HandleFunc("GET /", wrapHandler(handleGetRoot, ctx, "text/html", true))
 	http.HandleFunc("PUT /peer", wrapHandler(handleEditPeer, ctx, "text/plain", true))

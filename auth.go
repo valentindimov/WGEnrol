@@ -1,13 +1,25 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
-	"log"
 	"net/http"
 	"net/netip"
-
-	"golang.org/x/crypto/bcrypt"
+	"time"
 )
+
+func GetSessionToken(request *http.Request) (*string, error) {
+	sessionCookie, err := request.Cookie("session")
+	if err != nil {
+		return nil, err
+	}
+	cookieContents, err := base64.URLEncoding.DecodeString(sessionCookie.Value)
+	if err != nil {
+		return nil, err
+	}
+	token := string(cookieContents)
+	return &token, nil
+}
 
 func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	// Check IP filter
@@ -29,28 +41,19 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 			return fmt.Errorf("Request from host %s failed IP filter", hostPort.Addr().String())
 		}
 	}
-	// Check Basic Auth
-	username, password, ok := request.BasicAuth()
-	if ok {
-		if len(username) == 0 && len(password) == 0 {
-			log.Printf("From %s: %s %s Logout\n", request.RemoteAddr, request.Method, request.URL.Path)
-			// fallthrough
-		} else {
-			passwordHash, ok := ctx.Config.Admin.Users[username]
-			if ok {
-				if passwordMatchErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); passwordMatchErr == nil {
-					return nil
-				} else {
-					log.Printf("From %s: %s %s HTTP Basic Auth failed, wrong password\n", request.RemoteAddr, request.Method, request.URL.Path)
-					// fallthrough
-				}
-			} else {
-				log.Printf("From %s: %s %s HTTP Basic Auth failed, user not found\n", request.RemoteAddr, request.Method, request.URL.Path)
-				// fallthrough
-			}
-		}
+	// Check session cookie
+	token, err := GetSessionToken(request)
+	if err != nil {
+		http.Redirect(responseWriter, request, "/login", http.StatusFound)
+		return fmt.Errorf("Request from host %s missing/malformed session cookie (%s)", hostPort.Addr().String(), err.Error())
 	}
-	responseWriter.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
-	http.Error(responseWriter, "Unauthorized", http.StatusUnauthorized)
-	return fmt.Errorf("Authorization failed")
+	validity, ok := ctx.ValidSessionTokens[*token]
+	if ok && (validity.Compare(time.Now()) == 1) {
+		// Validity is extended to 1 hour after the last activity
+		ctx.ValidSessionTokens[*token] = time.Now().Add(time.Hour)
+		return nil
+	} else {
+		http.Redirect(responseWriter, request, "/login", http.StatusFound)
+		return fmt.Errorf("Request from host %s invalid session cookie", hostPort.Addr().String())
+	}
 }
