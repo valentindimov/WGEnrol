@@ -198,14 +198,14 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	return nil
 }
 
-func (wgConf *WgConf) applyDeviceConfig(applyTo *string) error {
+func (wgConf *WgConf) applyDeviceConfig(ifname *string) error {
 	// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
 	stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
 	stripCmdOut, err := stripCmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/proc/self/fd/0")
+	syncCmd := exec.Command("/usr/bin/wg", "syncconf", *ifname, "/proc/self/fd/0")
 	syncCmd.Stdin = stripCmdOut
 	syncCmd.Start()
 	stripCmd.Start()
@@ -220,7 +220,7 @@ func (wgConf *WgConf) applyDeviceConfig(applyTo *string) error {
 	return nil
 }
 
-func (wgConf *WgConf) save(applyTo *string) error {
+func (wgConf *WgConf) save(ifname *string) error {
 	// Edit the INI file with the contents of the peers map
 	wgConf.file.DeleteSection("Peer")
 	for _, peer := range wgConf.Peers {
@@ -254,7 +254,7 @@ func (wgConf *WgConf) save(applyTo *string) error {
 		return err
 	}
 	// If requested, apply the new configuration and return
-	return wgConf.applyDeviceConfig(applyTo)
+	return wgConf.applyDeviceConfig(ifname)
 }
 
 func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
@@ -283,4 +283,13 @@ func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
 		}
 	}
 	return ips, nil
+}
+
+func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
+	device, err := ctx.WgClient.Device(*ctx.Config.Wireguard.Ifname)
+	if err != nil {
+		return nil, err
+	}
+	result := base64.StdEncoding.EncodeToString(device.PublicKey[:])
+	return &result, nil
 }

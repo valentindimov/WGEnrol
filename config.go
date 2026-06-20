@@ -37,7 +37,6 @@ type WgEnrolConfig struct {
 	}
 	Advertise struct {
 		Endpoint          *string  // required
-		PublicKey         *string  `yaml:"publicKey"`         // required
 		AdditionalSubnets []string `yaml:"additionalSubnets"` // optional
 		AdvertiseDNS      bool     `yaml:"advertiseDNS"`      // optional
 	}
@@ -96,9 +95,6 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	}
 	if result.Advertise.Endpoint == nil {
 		return nil, fmt.Errorf("advertise.endpoints parameter is required")
-	}
-	if result.Advertise.PublicKey == nil {
-		return nil, fmt.Errorf("advertise.publicKey parameter is required")
 	}
 	_, parseAdvNetsErr := validateIPNetList(result.Advertise.AdditionalSubnets)
 	if parseAdvNetsErr != nil {

@@ -23,7 +23,6 @@ wireguard:
   ifname: "wg0"
 
 advertise:
-  publicKey: "yIOKKpuzNrue8Kf+N2LCc1lB0wF60arlU1a3NPtpLiY=" # Private key: "qLtVXL2aKLSUtXw7Bs/6a2Fen8IryiQHzxgAyQHLK1I="
   endpoint: "127.0.0.1:51820"
   additionalSubnets:
     - "10.164.0.0/16"

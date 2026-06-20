@@ -202,11 +202,15 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 				advertisedDNS = append(advertisedDNS, ip.String())
 			}
 		}
+		advertisedPublicKey, err := ctx.GetDevicePubkey()
+		if err != nil {
+			return nil, WrapError(err, 500, false)
+		}
 		if err := enrolmentHtmlTpl.Execute(&response, map[string]any{
 			"peerAddresses":      peerAddrs,
 			"pubkeyPreimage":     pubkeyPreimageBase64Url,
 			"advertisedDNS":      strings.Join(advertisedDNS, ","),
-			"serverPublicKey":    ctx.Config.Advertise.PublicKey,
+			"serverPublicKey":    *advertisedPublicKey,
 			"advertisedNetworks": strings.Join(append(vpnNetworksStr, ctx.Config.Advertise.AdditionalSubnets...), ","),
 			"advertisedEndpoint": ctx.Config.Advertise.Endpoint,
 		}); err != nil {
