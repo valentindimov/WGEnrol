@@ -32,7 +32,7 @@ type WgEnrolConfig struct {
 		Port     *int    // required if enabled
 	}
 	Wireguard struct {
-		Ifname   *string // optional
+		Ifname   *string
 		ConfFile *string `yaml:"confFile"` // required
 	}
 	Advertise struct {
@@ -90,6 +90,9 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	}
 	if result.Wireguard.ConfFile == nil {
 		return nil, fmt.Errorf("wireguard.confFile parameter is required")
+	}
+	if result.Wireguard.Ifname == nil {
+		return nil, fmt.Errorf("wireguard.ifname parameter is required")
 	}
 	if result.Advertise.Endpoint == nil {
 		return nil, fmt.Errorf("advertise.endpoints parameter is required")
