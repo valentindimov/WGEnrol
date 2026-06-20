@@ -218,6 +218,7 @@ func (ctx *ServerContext) applyDeviceConfig() error {
 		}
 		var thirtySeconds time.Duration
 		thirtySeconds = 30 * 1000 * 1000 * 1000
+
 		newPeers = append(newPeers, wgtypes.PeerConfig{
 			PublicKey:                   *pubkey,
 			PresharedKey:                &psk,
@@ -277,6 +278,7 @@ func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	deviceIPs := make([]netip.Addr, 0, len(*deviceNets))
 	for _, network := range *deviceNets {
 		deviceIPs = append(deviceIPs, network.Addr())
@@ -355,13 +357,21 @@ func (ctx *ServerContext) GetDeviceNets() (*[]netip.Prefix, error) {
 			for _, addr := range ifaceAddrs {
 				switch addrByType := addr.(type) {
 				case *net.IPAddr:
-					addrParsed, _ := netip.AddrFromSlice(addrByType.IP)
-					prefix := netip.PrefixFrom(addrParsed, int(countLeadingOnes(addrByType.IP.DefaultMask())))
+					addrParsed, err := netip.ParseAddr(addrByType.String())
+					if err != nil {
+						return nil, err
+					}
+					prefix := netip.PrefixFrom(addrParsed, addrParsed.BitLen())
 					resultNets = append(resultNets, prefix)
 				case *net.IPNet:
-					addrParsed, _ := netip.AddrFromSlice(addrByType.IP)
-					prefix := netip.PrefixFrom(addrParsed, int(countLeadingOnes(addrByType.Mask)))
-					resultNets = append(resultNets, prefix)
+					prefix, err := netip.ParsePrefix(addrByType.String())
+					if err != nil {
+						return nil, err
+					}
+					// Make sure to ignore IPv6 link-local addresses here
+					if prefix.Addr().Is4() || (!prefix.Addr().IsLinkLocalMulticast() && !prefix.Addr().IsLinkLocalUnicast()) {
+						resultNets = append(resultNets, prefix)
+					}
 				}
 			}
 			return &resultNets, nil
