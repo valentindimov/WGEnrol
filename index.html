@@ -312,7 +312,7 @@
         xmlhttp.open("GET", window.location.href, true);
         xmlhttp.setRequestHeader("Authorization", `Basic ${btoa(":")}`);
         xmlhttp.send();
-        window.location.reload();
+        window.location.replace("about:blank");
     }
 </script>
 </html>
