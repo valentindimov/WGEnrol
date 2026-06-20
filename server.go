@@ -10,8 +10,6 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
-
-	"golang.zx2c4.com/wireguard/wgctrl"
 )
 
 func compileTemplateOrPanic(name string, source string) *template.Template {
@@ -42,7 +40,6 @@ type ServerContext struct {
 	stateMutex sync.Mutex
 	ConfFile   *WgConf
 	Config     *WgEnrolConfig
-	WgClient   *wgctrl.Client
 
 	AdminIpFilter []netip.Prefix
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"gopkg.in/ini.v1"
 )
@@ -225,6 +226,11 @@ func (peer WgPeer) allowedIpsAsNetList() []net.IPNet {
 }
 
 func (ctx *ServerContext) applyDeviceConfig() error {
+	wgClient, err := wgctrl.New()
+	if err != nil {
+		return err
+	}
+	defer wgClient.Close()
 	newPeers := make([]wgtypes.PeerConfig, 0, len(ctx.ConfFile.Peers))
 	for _, peer := range ctx.ConfFile.Peers {
 		pubkey, err := decodeKey(peer.Pubkey)
@@ -249,7 +255,7 @@ func (ctx *ServerContext) applyDeviceConfig() error {
 			AllowedIPs:                  peer.allowedIpsAsNetList(),
 		})
 	}
-	if err := ctx.WgClient.ConfigureDevice(*ctx.Config.Wireguard.Ifname, wgtypes.Config{
+	if err := wgClient.ConfigureDevice(*ctx.Config.Wireguard.Ifname, wgtypes.Config{
 		ReplacePeers: true,
 		Peers:        newPeers,
 	}); err != nil {
@@ -324,7 +330,12 @@ func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
 }
 
 func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
-	device, err := ctx.WgClient.Device(*ctx.Config.Wireguard.Ifname)
+	wgClient, err := wgctrl.New()
+	if err != nil {
+		return nil, err
+	}
+	defer wgClient.Close()
+	device, err := wgClient.Device(*ctx.Config.Wireguard.Ifname)
 	if err != nil {
 		return nil, err
 	}

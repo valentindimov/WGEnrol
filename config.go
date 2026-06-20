@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"golang.zx2c4.com/wireguard/wgctrl"
 	"gopkg.in/yaml.v3"
 )
 
@@ -113,14 +112,9 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 	if confFile == nil || err != nil {
 		return nil, err
 	}
-	wgClient, err := wgctrl.New()
-	if err != nil || wgClient == nil {
-		return nil, err
-	}
 	ctx := ServerContext{
 		ConfFile: confFile,
 		Config:   &result,
-		WgClient: wgClient,
 
 		AdminIpFilter: ipFilterNets,
 	}
