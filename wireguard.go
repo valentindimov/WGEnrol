@@ -25,10 +25,9 @@ type WgPeer struct {
 }
 
 type WgConf struct {
-	filePath    string
-	file        *ini.File
-	Peers       map[string]WgPeer
-	VpnNetworks []netip.Prefix
+	filePath string
+	file     *ini.File
+	Peers    map[string]WgPeer
 }
 
 func validateWireguardKey(input string) error {
@@ -80,29 +79,6 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		return nil, errors.New("No Interface section found in the file.")
 	}
 	interfaceSection.Comment = "# This file is managed automatically.\n# Do not edit it, your changes may get overwritten."
-
-	// Step 2: Determine VPN networks
-	networksList := make([]netip.Prefix, 0)
-	if interfaceSection.HasKey("Address") {
-		val, err := interfaceSection.GetKey("Address")
-		if err != nil {
-			return nil, err
-		}
-		networksStr := strings.Trim(val.Value(), " ")
-		if len(networksStr) == 0 {
-			return nil, fmt.Errorf("Address key in Interface section cannot be empty.")
-		}
-		addrs := strings.SplitSeq(networksStr, ",")
-		for addr := range addrs {
-			network, err := netip.ParsePrefix(strings.Trim(addr, " "))
-			if err != nil {
-				return nil, err
-			}
-			networksList = append(networksList, network.Masked())
-		}
-	} else {
-		return nil, fmt.Errorf("Could not find Address key in Interface section.")
-	}
 
 	// Step 3: load peers from file
 	peersMap := make(map[string]WgPeer)
@@ -167,10 +143,9 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 		return nil, err
 	}
 	result := WgConf{
-		filePath:    filePathAbs,
-		file:        cfg,
-		Peers:       peersMap,
-		VpnNetworks: networksList,
+		filePath: filePathAbs,
+		file:     cfg,
+		Peers:    peersMap,
 	}
 	return &result, nil
 }
@@ -297,18 +272,23 @@ func (ctx *ServerContext) Commit() error {
 	return ctx.applyDeviceConfig()
 }
 
-func (ctx *ServerContext) GetAllowedIPs() ([]netip.Prefix, error) {
-	ips := make([]netip.Prefix, 0, len(ctx.ConfFile.VpnNetworks))
-	interfaceIPs, err := ctx.GetDeviceAddrs()
+func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
+	deviceNets, err := ctx.GetDeviceNets()
 	if err != nil {
 		return nil, err
 	}
-	for _, network := range ctx.ConfFile.VpnNetworks {
+	deviceIPs := make([]netip.Addr, 0, len(*deviceNets))
+	for _, network := range *deviceNets {
+		deviceIPs = append(deviceIPs, network.Addr())
+	}
+
+	ips := make([]netip.Prefix, 0, len(*deviceNets))
+	for _, network := range *deviceNets {
 		network, _ := netip.ParsePrefix(network.String())
 		freeIPFound := false
 	ipSearchLoop:
 		for ip := network.Addr().Next(); network.Contains(ip); ip = ip.Next() {
-			if slices.Contains(*interfaceIPs, ip) {
+			if slices.Contains(deviceIPs, ip) {
 				continue ipSearchLoop
 			}
 			for _, peer := range ctx.ConfFile.Peers {
@@ -343,39 +323,49 @@ func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
 	return &result, nil
 }
 
-func (ctx *ServerContext) GetDeviceAddrsAsStrings() (*[]string, error) {
+func countLeadingOnes(input []byte) uint {
+	var result uint
+	result = 0
+	for _, b := range input {
+		if b == 255 {
+			result += 8
+			continue
+		}
+		for b&128 == 1 {
+			result += 1
+			b = (b & 127) << 1
+		}
+		break
+	}
+	return result
+}
+
+func (ctx *ServerContext) GetDeviceNets() (*[]netip.Prefix, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
 	}
 	for _, iface := range ifaces {
 		if iface.Name == *ctx.Config.Wireguard.Ifname {
-			result := make([]string, 0, len(ifaces))
+			resultNets := make([]netip.Prefix, 0, len(ifaces))
 			ifaceAddrs, err := iface.Addrs()
 			if err != nil {
 				return nil, err
 			}
 			for _, addr := range ifaceAddrs {
-				result = append(result, addr.String())
+				switch addrByType := addr.(type) {
+				case *net.IPAddr:
+					addrParsed, _ := netip.AddrFromSlice(addrByType.IP)
+					prefix := netip.PrefixFrom(addrParsed, int(countLeadingOnes(addrByType.IP.DefaultMask())))
+					resultNets = append(resultNets, prefix)
+				case *net.IPNet:
+					addrParsed, _ := netip.AddrFromSlice(addrByType.IP)
+					prefix := netip.PrefixFrom(addrParsed, int(countLeadingOnes(addrByType.Mask)))
+					resultNets = append(resultNets, prefix)
+				}
 			}
-			return &result, nil
+			return &resultNets, nil
 		}
 	}
 	return nil, fmt.Errorf("Interface %s not found.", *ctx.Config.Wireguard.Ifname)
-}
-
-func (ctx *ServerContext) GetDeviceAddrs() (*[]netip.Addr, error) {
-	addrStrings, err := ctx.GetDeviceAddrsAsStrings()
-	if err != nil {
-		return nil, err
-	}
-	result := make([]netip.Addr, 0, len(*addrStrings))
-	for _, addrStr := range *addrStrings {
-		addrParsed, err := netip.ParseAddr(addrStr)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, addrParsed)
-	}
-	return &result, nil
 }

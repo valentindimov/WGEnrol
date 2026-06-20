@@ -22,7 +22,7 @@ type WgPeerDTO struct {
 }
 
 func (peerDTO *WgPeerDTO) fromDTO(ctx *ServerContext) (*WgPeer, error) {
-	allowedIPs, err := ctx.GetAllowedIPs()
+	allowedIPs, err := ctx.FindSuitableAllowedIPs()
 	if err != nil {
 		return nil, err
 	}
@@ -157,21 +157,21 @@ func getFirstIPInNetwork(network netip.Prefix) netip.Addr {
 	}
 }
 
-func computePeerIPs(peerAllowedIps []netip.Prefix, cfg *WgConf) (*string, error) {
+func computeClientConfigAllowedIPs(peerAllowedIps []netip.Prefix, deviceNets *[]netip.Prefix) (*string, error) {
 	ips := make([]netip.Addr, 0, len(peerAllowedIps))
 	for _, network := range peerAllowedIps {
 		ips = append(ips, getFirstIPInNetwork(network))
 	}
-	peerNetworks := make([]string, 0)
+	peerNetworksStr := make([]string, 0)
 	for _, ip := range ips {
-		for _, network := range cfg.VpnNetworks {
+		for _, network := range *deviceNets {
 			if network.Contains(ip) {
 				ipWithNet := netip.PrefixFrom(ip, network.Bits())
-				peerNetworks = append(peerNetworks, ipWithNet.String())
+				peerNetworksStr = append(peerNetworksStr, ipWithNet.String())
 			}
 		}
 	}
-	result := strings.Join(peerNetworks, ",")
+	result := strings.Join(peerNetworksStr, ",")
 	return &result, nil
 }
 
@@ -185,24 +185,24 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 	}
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
+	deviceNets, err := ctx.GetDeviceNets()
+	if err != nil {
+		return nil, WrapError(err, 500, false)
+	}
 
 	if peer, ok := ctx.ConfFile.Peers[pubkey]; ok {
-		peerAddrs, err := computePeerIPs(peer.AllowedIps, ctx.ConfFile)
+		peerAddrs, err := computeClientConfigAllowedIPs(peer.AllowedIps, deviceNets)
 		if err != nil {
 			return nil, WrapError(err, 500, false)
 		}
 		var response bytes.Buffer
-		vpnNetworksStr := make([]string, 0, len(ctx.ConfFile.VpnNetworks))
-		for _, network := range ctx.ConfFile.VpnNetworks {
-			vpnNetworksStr = append(vpnNetworksStr, network.String())
-		}
-		var advertisedDNS []string
-		if ctx.Config.Advertise.AdvertiseDNS {
-			deviceAddrs, err := ctx.GetDeviceAddrsAsStrings()
-			if err != nil {
-				return nil, WrapError(err, 500, false)
+		vpnNetworksStr := make([]string, 0, len(*deviceNets))
+		advertisedDNS := make([]string, 0, len(*deviceNets))
+		for _, network := range *deviceNets {
+			vpnNetworksStr = append(vpnNetworksStr, network.Masked().String())
+			if ctx.Config.Advertise.AdvertiseDNS {
+				advertisedDNS = append(advertisedDNS, network.Addr().String())
 			}
-			advertisedDNS = *deviceAddrs
 		}
 		advertisedPublicKey, err := ctx.GetDevicePubkey()
 		if err != nil {
