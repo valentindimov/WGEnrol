@@ -306,13 +306,18 @@
             }
         }
     };
-    // Logout - the site uses Basic Auth, so we just overwrite the credentials with empty ones
     async function logout() {
-        var xmlhttp = new XMLHttpRequest();
-        xmlhttp.open("GET", window.location.href, true);
-        xmlhttp.setRequestHeader("Authorization", `Basic ${btoa(":")}`);
-        xmlhttp.send();
-        window.location.replace("about:blank");
+        try {
+            let response = await fetch("/logout", {method: "POST"});
+            if (!response.ok) {
+                let errorMessage = await response.text();
+                throw new Error(`${response.status} - ${errorMessage}`);
+            }
+        } catch(err) {
+            alert(`Operation failed: ${err}`);
+        } finally {
+            window.location.href = "/login";
+        }
     }
 </script>
 </html>

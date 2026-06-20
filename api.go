@@ -342,5 +342,14 @@ func handlePostLogout(ctx *ServerContext, r *http.Request, resp http.ResponseWri
 	if token, err := GetSessionToken(r); token != nil && err == nil {
 		delete(ctx.ValidSessionTokens, *token)
 	}
+	http.SetCookie(resp, &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   ctx.Config.Server.Tls.Enabled,
+		Path:     "/",
+		MaxAge:   0,
+	})
 	return nil, nil
 }
