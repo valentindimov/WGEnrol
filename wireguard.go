@@ -198,14 +198,14 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	return nil
 }
 
-func (wgConf *WgConf) applyDeviceConfig(ifname *string) error {
+func (ctx *ServerContext) applyDeviceConfig() error {
 	// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
-	stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
+	stripCmd := exec.Command("/usr/bin/wg-quick", "strip", ctx.ConfFile.filePath)
 	stripCmdOut, err := stripCmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	syncCmd := exec.Command("/usr/bin/wg", "syncconf", *ifname, "/proc/self/fd/0")
+	syncCmd := exec.Command("/usr/bin/wg", "syncconf", *ctx.Config.Wireguard.Ifname, "/proc/self/fd/0")
 	syncCmd.Stdin = stripCmdOut
 	syncCmd.Start()
 	stripCmd.Start()
@@ -220,11 +220,11 @@ func (wgConf *WgConf) applyDeviceConfig(ifname *string) error {
 	return nil
 }
 
-func (wgConf *WgConf) save(ifname *string) error {
+func (ctx *ServerContext) Commit() error {
 	// Edit the INI file with the contents of the peers map
-	wgConf.file.DeleteSection("Peer")
-	for _, peer := range wgConf.Peers {
-		sec, err := wgConf.file.NewSection("Peer")
+	ctx.ConfFile.file.DeleteSection("Peer")
+	for _, peer := range ctx.ConfFile.Peers {
+		sec, err := ctx.ConfFile.file.NewSection("Peer")
 		if err != nil {
 			return err
 		}
@@ -249,12 +249,12 @@ func (wgConf *WgConf) save(ifname *string) error {
 		sec.Comment = fmt.Sprintf("# %s", peer.Comment)
 	}
 	// Save the INI file.
-	err := atomicSaveIniFile(wgConf.file, wgConf.filePath)
+	err := atomicSaveIniFile(ctx.ConfFile.file, ctx.ConfFile.filePath)
 	if err != nil {
 		return err
 	}
 	// If requested, apply the new configuration and return
-	return wgConf.applyDeviceConfig(ifname)
+	return ctx.applyDeviceConfig()
 }
 
 func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
