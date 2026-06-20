@@ -4,13 +4,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"gopkg.in/ini.v1"
 )
 
@@ -198,24 +200,60 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	return nil
 }
 
-func (ctx *ServerContext) applyDeviceConfig() error {
-	// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
-	stripCmd := exec.Command("/usr/bin/wg-quick", "strip", ctx.ConfFile.filePath)
-	stripCmdOut, err := stripCmd.StdoutPipe()
+func decodeKey(strKey string) (*[wgtypes.KeyLen]byte, error) {
+	// FIXME: We should store this as a byte string to begin with...
+	keySlice, err := base64.StdEncoding.DecodeString(strKey)
 	if err != nil {
+		return nil, err
+	}
+	if len(keySlice) != wgtypes.KeyLen {
+		return nil, fmt.Errorf("Wrong key length: should be %d, is %d", wgtypes.KeyLen, len(keySlice))
+	}
+	result := [wgtypes.KeyLen]byte(keySlice)
+	return &result, nil
+}
+
+func (peer WgPeer) allowedIpsAsNetList() []net.IPNet {
+	result := make([]net.IPNet, 0, len(peer.AllowedIps))
+	for _, prefix := range peer.AllowedIps {
+		result = append(result, net.IPNet{
+			IP:   prefix.Addr().AsSlice(),
+			Mask: net.CIDRMask(prefix.Bits(), prefix.Addr().BitLen()),
+		})
+	}
+	return result
+}
+
+func (ctx *ServerContext) applyDeviceConfig() error {
+	newPeers := make([]wgtypes.PeerConfig, 0, len(ctx.ConfFile.Peers))
+	for _, peer := range ctx.ConfFile.Peers {
+		pubkey, err := decodeKey(peer.Pubkey)
+		if err != nil {
+			return err
+		}
+		var psk wgtypes.Key
+		if peer.PresharedKey != nil {
+			parsedPsk, err := decodeKey(*peer.PresharedKey)
+			if err != nil {
+				return err
+			}
+			psk = *parsedPsk
+		}
+		var thirtySeconds time.Duration
+		thirtySeconds = 30 * 1000 * 1000 * 1000
+		newPeers = append(newPeers, wgtypes.PeerConfig{
+			PublicKey:                   *pubkey,
+			PresharedKey:                &psk,
+			PersistentKeepaliveInterval: &thirtySeconds,
+			ReplaceAllowedIPs:           true,
+			AllowedIPs:                  peer.allowedIpsAsNetList(),
+		})
+	}
+	if err := ctx.WgClient.ConfigureDevice(*ctx.Config.Wireguard.Ifname, wgtypes.Config{
+		ReplacePeers: true,
+		Peers:        newPeers,
+	}); err != nil {
 		return err
-	}
-	syncCmd := exec.Command("/usr/bin/wg", "syncconf", *ctx.Config.Wireguard.Ifname, "/proc/self/fd/0")
-	syncCmd.Stdin = stripCmdOut
-	syncCmd.Start()
-	stripCmd.Start()
-	errSync := syncCmd.Wait()
-	errStrip := stripCmd.Wait()
-	if errStrip != nil {
-		return errStrip
-	}
-	if errSync != nil {
-		return errSync
 	}
 	return nil
 }
