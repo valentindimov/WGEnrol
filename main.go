@@ -15,6 +15,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer ctx.WgClient.Close()
 
 	// Done, start the server
 	if ctx.Config.Server.Tls.Enabled {
