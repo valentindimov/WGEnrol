@@ -198,6 +198,28 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	return nil
 }
 
+func (wgConf *WgConf) applyDeviceConfig(applyTo *string) error {
+	// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
+	stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
+	stripCmdOut, err := stripCmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/proc/self/fd/0")
+	syncCmd.Stdin = stripCmdOut
+	syncCmd.Start()
+	stripCmd.Start()
+	errSync := syncCmd.Wait()
+	errStrip := stripCmd.Wait()
+	if errStrip != nil {
+		return errStrip
+	}
+	if errSync != nil {
+		return errSync
+	}
+	return nil
+}
+
 func (wgConf *WgConf) save(applyTo *string) error {
 	// Edit the INI file with the contents of the peers map
 	wgConf.file.DeleteSection("Peer")
@@ -231,28 +253,8 @@ func (wgConf *WgConf) save(applyTo *string) error {
 	if err != nil {
 		return err
 	}
-	// If requested, apply the new configuration
-	if applyTo != nil {
-		// The below code is the equivalent of "/usr/bin/wg-quick strip ${filePath} | /usr/bin/wg syncconf ${applyTo} /dev/fd/0"
-		stripCmd := exec.Command("/usr/bin/wg-quick", "strip", wgConf.filePath)
-		stripCmdOut, err := stripCmd.StdoutPipe()
-		if err != nil {
-			return err
-		}
-		syncCmd := exec.Command("/usr/bin/wg", "syncconf", *applyTo, "/proc/self/fd/0")
-		syncCmd.Stdin = stripCmdOut
-		syncCmd.Start()
-		stripCmd.Start()
-		errSync := syncCmd.Wait()
-		errStrip := stripCmd.Wait()
-		if errStrip != nil {
-			return errStrip
-		}
-		if errSync != nil {
-			return errSync
-		}
-	}
-	return nil
+	// If requested, apply the new configuration and return
+	return wgConf.applyDeviceConfig(applyTo)
 }
 
 func (wgConf *WgConf) GetAllowedIPs() ([]netip.Prefix, error) {
