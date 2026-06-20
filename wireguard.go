@@ -196,7 +196,7 @@ func (peer WgPeer) allowedIpsAsNetList() []net.IPNet {
 	return result
 }
 
-func (ctx *ServerContext) applyDeviceConfig() error {
+func (ctx *ServerContext) ApplyDeviceConfig() error {
 	wgClient, err := wgctrl.New()
 	if err != nil {
 		return err
@@ -270,7 +270,7 @@ func (ctx *ServerContext) Commit() error {
 		return err
 	}
 	// If requested, apply the new configuration and return
-	return ctx.applyDeviceConfig()
+	return ctx.ApplyDeviceConfig()
 }
 
 func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {

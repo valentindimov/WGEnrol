@@ -15,6 +15,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := ctx.ApplyDeviceConfig(); err != nil {
+		log.Fatal(err)
+	}
 
 	// Done, start the server
 	if ctx.Config.Server.Tls.Enabled {
