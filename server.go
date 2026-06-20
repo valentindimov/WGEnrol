@@ -39,7 +39,7 @@ var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTem
 
 //go:embed login.html
 var loginHtmlTemplateString string
-var loginHtmlTpl = compileTemplateOrPanic("login.html", enrolmentHtmlTemplateString)
+var loginHtmlTpl = compileTemplateOrPanic("login.html", loginHtmlTemplateString)
 
 type ServerContext struct {
 	stateMutex sync.Mutex
@@ -66,7 +66,7 @@ func WrapError(err error, status int, visible bool) *HandlerError {
 }
 
 func wrapHandler(
-	handler func(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError),
+	handler func(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError),
 	ctx *ServerContext,
 	contentType string,
 	authenticated bool,
@@ -81,7 +81,7 @@ func wrapHandler(
 		ctx.stateMutex.Lock()
 		defer ctx.stateMutex.Unlock()
 		log.Printf("From %s: %s %s\n", request.RemoteAddr, request.Method, request.URL.Path)
-		result, err := handler(ctx, request)
+		result, err := handler(ctx, request, responseWriter)
 		if err != nil {
 			// HTTP error response
 			log.Printf("From %s: %s %s - ERROR %s\n", request.RemoteAddr, request.Method, request.URL.Path, err.Error())

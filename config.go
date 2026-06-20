@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -116,7 +117,8 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 		ConfFile: confFile,
 		Config:   &result,
 
-		AdminIpFilter: ipFilterNets,
+		AdminIpFilter:      ipFilterNets,
+		ValidSessionTokens: make(map[string]time.Time),
 	}
 	return &ctx, nil
 }

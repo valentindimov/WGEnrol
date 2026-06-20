@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type WgPeerDTO struct {
@@ -37,7 +39,7 @@ func (peerDTO *WgPeerDTO) fromDTO(ctx *ServerContext) (*WgPeer, error) {
 }
 
 // GET /
-func handleGetRoot(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleGetRoot(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	var sortedPeersList []WgPeer
 	for _, peer := range ctx.ConfFile.Peers {
 		sortedPeersList = append(sortedPeersList, peer)
@@ -55,7 +57,7 @@ func handleGetRoot(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) 
 }
 
 // PUT /peer
-func handleEditPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleEditPeer(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	requestBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
 		return nil, WrapError(readErr, 400, false)
@@ -83,7 +85,7 @@ func handleEditPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError)
 }
 
 // POST /peer
-func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleCreatePeer(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	requestBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
 		return nil, WrapError(readErr, 400, false)
@@ -133,7 +135,7 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerErro
 
 // DELETE /peer/{pubkey}
 // pubkey must be encoded as URL-safe base64 (and not the standard Base64 WireGuard keys are usually encoded as)
-func handleDeletePeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleDeletePeer(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	pubkeyBase64Url := r.PathValue("pubkey")
 	pubkeyDecoded, decodeErr := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyBase64Url)
 	if decodeErr != nil {
@@ -179,7 +181,7 @@ func computeClientConfigAllowedIPs(peerAllowedIps []netip.Prefix, deviceNets *[]
 
 // GET /peer/{pubkeyPreimage}
 // pubkeyPreimage must be a Base64-URL-encoded string and a valid preimage for a public key stored in the WireGuard configuration
-func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	pubkeyPreimageBase64Url := r.PathValue("pubkeyPreimage")
 	pubkeyPreimageDecoded, decodeErr := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if decodeErr != nil {
@@ -228,7 +230,7 @@ func handleGetPeerEnrolmentPage(ctx *ServerContext, r *http.Request) ([]byte, *H
 }
 
 // PUT /peer/{pubkeyPreimage}
-func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleEnrolPeer(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	type SetPeerPubkeyRequest struct {
 		NewPubKey string
 		NewPSK    *string
@@ -278,7 +280,7 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 }
 
 // GET /login
-func handleGetLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handleGetLogin(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	var tplResult bytes.Buffer
 	if err := loginHtmlTpl.Execute(&tplResult, map[string]any{}); err != nil {
 		return nil, WrapError(err, 500, false)
@@ -288,7 +290,7 @@ func handleGetLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError)
 }
 
 // POST /login
-func handlePostLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handlePostLogin(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	type LoginRequest struct {
 		Username string
 		Password string
@@ -301,16 +303,25 @@ func handlePostLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 	if err := json.Unmarshal(requestBytes, &requestObj); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
-	// TODO: check user/password
+
+	passwordHash, ok := ctx.Config.Admin.Users[requestObj.Username]
+	if ok {
+		if passwordMatchErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(requestObj.Password)); passwordMatchErr != nil {
+			return nil, WrapError(fmt.Errorf("Wrong username or password"), 401, true)
+		}
+	} else {
+		return nil, WrapError(fmt.Errorf("Wrong username or password"), 401, true)
+	}
 
 	newToken := rand.Text()
 	ctx.ValidSessionTokens[newToken] = time.Now().Add(time.Hour)
-	r.AddCookie(&http.Cookie{
+	http.SetCookie(resp, &http.Cookie{
 		Name:     "session",
 		Value:    base64.URLEncoding.EncodeToString([]byte(newToken)),
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Secure:   ctx.Config.Server.Tls.Enabled,
+		Path:     "/",
 	})
 
 	tokensToRemove := make([]string, 0, len(ctx.ValidSessionTokens))
@@ -327,7 +338,7 @@ func handlePostLogin(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError
 }
 
 // POST /logout
-func handlePostLogout(ctx *ServerContext, r *http.Request) ([]byte, *HandlerError) {
+func handlePostLogout(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
 	if token, err := GetSessionToken(r); token != nil && err == nil {
 		delete(ctx.ValidSessionTokens, *token)
 	}
