@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>WGEnrol</title>
+<style>
+    *, *::before, *::after {
+        box-sizing: border-box;
+    }
+    *:not(dialog) {
+        margin: 0;
+    }
+    img, picture, video, canvas, svg {
+        display: block;
+        max-width: 100%;
+    }
+    input, button, textarea, select {
+        font: inherit;
+    }
+
+    body {
+        font-family: 'Courier New';
+    }
+    input {
+        field-sizing: content;
+        padding: 3px 5px 3px 5px;
+        min-width: 200px;
+        max-width: 800px;
+    }
+
+    #MainContainer {
+        background-color: #f5f7f7;
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+        flex-flow: column nowrap;
+        align-items: stretch;
+    }
+    #HeaderContainer {
+        background-color: #99dbff;
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 2px solid #759fb6;
+    }
+    #DataContainer {
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: center;
+        padding: 5px 20px 0px 20px;
+    }
+    #DataContainer pre {
+        background-color: #b1b3b3;
+        padding: 5px;
+        margin: 5px;
+    }
+    button {
+        margin: 0px 5px 0px 5px;
+        padding: 3px;
+    }
+    .hidden {
+        display: none;
+    }
+</style>
+</head>
+<body>
+<div id="MainContainer">
+    <div id="HeaderContainer">
+        <h1>WGEnrol</h1>
+    </div>
+    <div id="DataContainer">
+        <h2 style="margin: 10px">Login</h2>
+        <table>
+            <tr>
+                <th scope="col">Username:</th>
+                <td><input type="text" id="UsernameInput" /></td>
+            </tr>
+            <tr>
+                <th scope="col">Password:</th>
+                <td><input type="password" id="PasswordInput" /></td>
+            </tr>
+        </table>
+        <div>
+            <button style="margin: 10px" onclick="submitPassword()">Submit</button>
+        </div>
+    </div>
+</div>
+<script>
+    async function submitPassword() {
+        try {
+            let response = await fetch("/login", {method: "POST", body: JSON.stringify({
+                "username": document.getElementById("UsernameInput").value,
+                "password": document.getElementById("PasswordInput").value,
+            })});
+            if (!response.ok) {
+                let errorMessage = await response.text();
+                throw new Error(`${response.status} - ${errorMessage}`);
+            }
+            window.location.href = "/";
+        } catch(err) {
+            alert(`Operation failed: ${err}`);
+        }
+    }
+</script>
+</body>
+</html>
