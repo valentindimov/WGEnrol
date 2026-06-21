@@ -174,7 +174,7 @@ PersistentKeepalive = 25
             alert(`Operation failed: ${err}`);
             throw err;
         }
-        downloadableFile = new File([finishedConfig], 'wireguard.conf', {
+        downloadableFile = new File([finishedConfig], `${window.location.hostname}.conf`, {
             type: 'text/plain',
         })
         const link = document.createElement('a')
