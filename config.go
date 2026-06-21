@@ -21,7 +21,7 @@ type WgEnrolConfig struct {
 	}
 	Admin struct {
 		IPFilter []string          `yaml:"ipFilter"` // IP check disabled if this is omitted or empty
-		Users    map[string]string `yaml:"users"`    // maps username to password hash (argon2)
+		Users    map[string]string `yaml:"users"`    // maps username to password hash (bcrypt, can be generated with htpasswd)
 	}
 	Smtp struct {
 		Enabled  bool    // required

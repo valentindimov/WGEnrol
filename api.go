@@ -10,8 +10,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/mail"
 	"net/netip"
 	"net/smtp"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -58,23 +60,22 @@ func handleGetRoot(ctx *ServerContext, r *http.Request, resp http.ResponseWriter
 
 // PUT /peer
 func handleEditPeer(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+	type EditPeerRequest struct {
+		Pubkey  string
+		Comment string
+	}
 	requestBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
 		return nil, WrapError(readErr, 400, false)
 	}
-	var requestPeerObjDTO WgPeerDTO
-	if err := json.Unmarshal(requestBytes, &requestPeerObjDTO); err != nil {
-		return nil, WrapError(err, 400, true)
-	}
-	requestPeerObj, err := requestPeerObjDTO.fromDTO(ctx)
-	if err != nil {
-		return nil, WrapError(readErr, 400, true)
-	}
-	if err := requestPeerObj.validate(); err != nil {
+	var requestPeerObj EditPeerRequest
+	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
 	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Pubkey]; ok {
-		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = *requestPeerObj
+		newPeer := ctx.ConfFile.Peers[requestPeerObj.Pubkey]
+		newPeer.Comment = requestPeerObj.Comment
+		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = newPeer
 	} else {
 		return nil, WrapError(fmt.Errorf("Peer not found: %s", requestPeerObj.Pubkey), 404, true)
 	}
@@ -99,6 +100,16 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request, resp http.ResponseWri
 	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
 		return nil, WrapError(err, 400, true)
 	}
+	if requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
+		if _, err := mail.ParseAddress(*requestPeerObj.UserEmail); err != nil {
+			return nil, WrapError(fmt.Errorf("Invalid request: %s is not a valid email", *requestPeerObj.UserEmail), 400, true)
+		}
+		if requestPeerObj.RegistrationLink == nil {
+			return nil, WrapError(fmt.Errorf("Invalid request: RegistrationLink cannot be empty if UserEmail is specified"), 400, true)
+		} else if _, err := url.ParseRequestURI(*requestPeerObj.RegistrationLink); err != nil {
+			return nil, WrapError(fmt.Errorf("Invalid request: %s is not a valid link", *requestPeerObj.RegistrationLink), 400, true)
+		}
+	}
 	peerObj, err := requestPeerObj.Peer.fromDTO(ctx)
 	if err != nil {
 		return nil, WrapError(err, 400, true)
@@ -117,15 +128,20 @@ func handleCreatePeer(ctx *ServerContext, r *http.Request, resp http.ResponseWri
 	}
 	if ctx.Config.Smtp.Enabled && requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
 		go func() {
-			log.Printf("Sending registration email to %s", *requestPeerObj.UserEmail)
-			auth := smtp.PlainAuth("", *ctx.Config.Smtp.User, *ctx.Config.Smtp.Password, *ctx.Config.Smtp.Host)
-			to := []string{*requestPeerObj.UserEmail}
-			msg := []byte(fmt.Sprintf("To: %s\r\n"+
-				"Subject: [WgEnrol] Registration Link\r\n"+
-				"\r\n"+
-				"A new WireGuard account was created for you.\r\n"+
-				"Click the following link to register: %s\r\n", *requestPeerObj.UserEmail, *requestPeerObj.RegistrationLink))
-			if err := smtp.SendMail(fmt.Sprintf("%s:%d", *ctx.Config.Smtp.Host, *ctx.Config.Smtp.Port), auth, *ctx.Config.Smtp.From, to, msg); err != nil {
+			parsedMail, err := mail.ParseAddress(*requestPeerObj.UserEmail)
+			if err == nil {
+				log.Printf("Sending registration email to %s", parsedMail.Address)
+				auth := smtp.PlainAuth("", *ctx.Config.Smtp.User, *ctx.Config.Smtp.Password, *ctx.Config.Smtp.Host)
+				to := []string{parsedMail.Address}
+				msg := []byte(fmt.Sprintf("To: %s\r\n"+
+					"Subject: [WgEnrol] Registration Link\r\n"+
+					"\r\n"+
+					"A new WireGuard account was created for you.\r\n"+
+					"Click the following link to register: %s\r\n", parsedMail.Address, *requestPeerObj.RegistrationLink))
+				if err := smtp.SendMail(fmt.Sprintf("%s:%d", *ctx.Config.Smtp.Host, *ctx.Config.Smtp.Port), auth, *ctx.Config.Smtp.From, to, msg); err != nil {
+					log.Printf("Sending registration email to %s failed: %s", parsedMail.Address, err.Error())
+				}
+			} else {
 				log.Printf("Sending registration email to %s failed: %s", *requestPeerObj.UserEmail, err.Error())
 			}
 		}()
@@ -174,6 +190,9 @@ func computeClientConfigAllowedIPs(peerAllowedIps []netip.Prefix, deviceNets *[]
 				peerNetworksStr = append(peerNetworksStr, ipWithNet.String())
 			}
 		}
+	}
+	if len(peerNetworksStr) == 0 {
+		return nil, fmt.Errorf("Could not generate AllowedIPs for the client configs (intersection of device nets and the peer's allowed IPs is empty?)")
 	}
 	result := strings.Join(peerNetworksStr, ",")
 	return &result, nil
@@ -262,7 +281,7 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request, resp http.ResponseWrit
 			return nil, WrapError(err, 400, true)
 		}
 		if requestObj.NewPSK != nil {
-			if err := validateWireguardKey(requestObj.NewPubKey); err != nil {
+			if err := validateWireguardKey(*requestObj.NewPSK); err != nil {
 				return nil, WrapError(err, 400, true)
 			}
 		}
@@ -291,6 +310,7 @@ func handleGetLogin(ctx *ServerContext, r *http.Request, resp http.ResponseWrite
 
 // POST /login
 func handlePostLogin(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+	// TODO: Login rate limit per IP with backoff
 	type LoginRequest struct {
 		Username string
 		Password string
@@ -301,15 +321,16 @@ func handlePostLogin(ctx *ServerContext, r *http.Request, resp http.ResponseWrit
 	}
 	var requestObj LoginRequest
 	if err := json.Unmarshal(requestBytes, &requestObj); err != nil {
-		return nil, WrapError(err, 400, true)
+		return nil, WrapError(fmt.Errorf("Malformed request"), 400, true)
 	}
 
 	passwordHash, ok := ctx.Config.Admin.Users[requestObj.Username]
-	if ok {
-		if passwordMatchErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(requestObj.Password)); passwordMatchErr != nil {
-			return nil, WrapError(fmt.Errorf("Wrong username or password"), 401, true)
-		}
-	} else {
+	// To prevent timing attacks against the username, if it is not found, compare against a dummy hash
+	if !ok {
+		passwordHash = "$2a$08$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	}
+	// I really hope the compiler doesn't optimize this away...
+	if passwordMatchErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(requestObj.Password)); passwordMatchErr != nil || !ok {
 		return nil, WrapError(fmt.Errorf("Wrong username or password"), 401, true)
 	}
 

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -110,7 +109,11 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 				allowedIPsStrList := strings.SplitSeq(allowedIPsStr, ",")
 				allowedIPs := make([]netip.Prefix, 0)
 				for addr := range allowedIPsStrList {
-					network, err := netip.ParsePrefix(strings.Trim(addr, " "))
+					addr = strings.Trim(addr, " ")
+					if len(addr) == 0 {
+						continue
+					}
+					network, err := netip.ParsePrefix(addr)
 					if err != nil {
 						return nil, err
 					}
@@ -126,13 +129,17 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 					psk := strings.TrimSpace(val.Value())
 					presharedKey = &psk
 				}
-				// Construct the peer object
-				peersMap[pubkey] = WgPeer{
+				peer := WgPeer{
 					Pubkey:       pubkey,
 					PresharedKey: presharedKey,
 					AllowedIps:   allowedIPs,
 					Comment:      comment,
 				}
+				if err := peer.validate(); err != nil {
+					return nil, fmt.Errorf("Invalid peer %s: %s", peer.Pubkey, err.Error())
+				}
+				// Construct the peer object
+				peersMap[pubkey] = peer
 			}
 		}
 	}
@@ -155,9 +162,17 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	if err != nil {
 		return err
 	}
-	tempfile, err := os.CreateTemp(filepath.Dir(toPath), fmt.Sprintf("%s.swp", filepath.Base(toPath)))
+	tempDir := filepath.Dir(toPath)
+	tempfile, err := os.CreateTemp(tempDir, fmt.Sprintf("%s.swp", filepath.Base(toPath)))
+	if err != nil {
+		return err
+	}
 	defer os.Remove(tempfile.Name())
 	err = iniFile.SaveTo(tempfile.Name())
+	if err != nil {
+		return err
+	}
+	err = tempfile.Sync()
 	if err != nil {
 		return err
 	}
@@ -168,6 +183,12 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	err = os.Rename(tempfile.Name(), toPath)
 	if err != nil {
 		return err
+	}
+	// Try to fsync the directory as well, but treat it as best-effort (e.g. on Windows this isn't supported, and we can't undo at this point anyway)
+	dir, err := os.Open(tempDir)
+	if err == nil {
+		dir.Sync()
+		dir.Close()
 	}
 	return nil
 }
@@ -216,15 +237,12 @@ func (ctx *ServerContext) ApplyDeviceConfig() error {
 			}
 			psk = *parsedPsk
 		}
-		var thirtySeconds time.Duration
-		thirtySeconds = 30 * 1000 * 1000 * 1000
 
 		newPeers = append(newPeers, wgtypes.PeerConfig{
-			PublicKey:                   *pubkey,
-			PresharedKey:                &psk,
-			PersistentKeepaliveInterval: &thirtySeconds,
-			ReplaceAllowedIPs:           true,
-			AllowedIPs:                  peer.allowedIpsAsNetList(),
+			PublicKey:         *pubkey,
+			PresharedKey:      &psk,
+			ReplaceAllowedIPs: true,
+			AllowedIPs:        peer.allowedIpsAsNetList(),
 		})
 	}
 	if err := wgClient.ConfigureDevice(*ctx.Config.Wireguard.Ifname, wgtypes.Config{
@@ -264,13 +282,14 @@ func (ctx *ServerContext) Commit() error {
 		}
 		sec.Comment = fmt.Sprintf("# %s", peer.Comment)
 	}
-	// Save the INI file.
-	err := atomicSaveIniFile(ctx.ConfFile.file, ctx.ConfFile.filePath)
+	// If requested, apply the new configuration
+	err := ctx.ApplyDeviceConfig()
 	if err != nil {
 		return err
 	}
-	// If requested, apply the new configuration and return
-	return ctx.ApplyDeviceConfig()
+	// If the apply was successful, save the INI file.
+	// FIXME: The transaction / failure handling could be better here, but I'll be rewriting the backing store anyway, so this is fine for now.
+	return atomicSaveIniFile(ctx.ConfFile.file, ctx.ConfFile.filePath)
 }
 
 func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
@@ -325,22 +344,22 @@ func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
 	return &result, nil
 }
 
-func countLeadingOnes(input []byte) uint {
-	var result uint
-	result = 0
-	for _, b := range input {
-		if b == 255 {
-			result += 8
-			continue
-		}
-		for b&128 == 1 {
-			result += 1
-			b = (b & 127) << 1
-		}
-		break
-	}
-	return result
-}
+// func countLeadingOnes(input []byte) uint {
+// 	var result uint
+// 	result = 0
+// 	for _, b := range input {
+// 		if b == 255 {
+// 			result += 8
+// 			continue
+// 		}
+// 		for b&128 != 0 {
+// 			result += 1
+// 			b = (b & 127) << 1
+// 		}
+// 		break
+// 	}
+// 	return result
+// }
 
 func (ctx *ServerContext) GetDeviceNets() (*[]netip.Prefix, error) {
 	ifaces, err := net.Interfaces()

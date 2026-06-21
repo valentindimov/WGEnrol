@@ -21,7 +21,7 @@ func GetSessionToken(request *http.Request) (*string, error) {
 	return &token, nil
 }
 
-func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
+func ApplyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	// Check IP filter
 	hostPort, err := netip.ParseAddrPort(request.RemoteAddr)
 	if err != nil {
@@ -41,11 +41,15 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 			return fmt.Errorf("Request from host %s failed IP filter", hostPort.Addr().String())
 		}
 	}
+	return nil
+}
+
+func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	// Check session cookie
 	token, err := GetSessionToken(request)
 	if err != nil {
 		http.Redirect(responseWriter, request, "/login", http.StatusFound)
-		return fmt.Errorf("Request from host %s missing/malformed session cookie (%s)", hostPort.Addr().String(), err.Error())
+		return fmt.Errorf("Request from host %s missing/malformed session cookie (%s)", request.RemoteAddr, err.Error())
 	}
 	validity, ok := ctx.ValidSessionTokens[*token]
 	if ok && (validity.Compare(time.Now()) == 1) {
@@ -54,6 +58,6 @@ func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWrit
 		return nil
 	} else {
 		http.Redirect(responseWriter, request, "/login", http.StatusFound)
-		return fmt.Errorf("Request from host %s invalid session cookie", hostPort.Addr().String())
+		return fmt.Errorf("Request from host %s invalid session cookie", request.RemoteAddr)
 	}
 }

@@ -1,0 +1,11 @@
+# Store text files with LF in the repository and check them out as LF on all
+# platforms (including Windows), so gofmt and the toolchain stay consistent.
+* text=auto eol=lf
+
+# Windows batch scripts must keep CRLF line endings.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Treat compiled artifacts and certs/keys as binary (never normalize).
+*.exe binary
+*.pem -text
