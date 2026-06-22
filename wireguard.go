@@ -29,24 +29,13 @@ type WgConf struct {
 	Peers    map[string]WgPeer
 }
 
-func validateWireguardKey(input string) error {
-	decoded, err := base64.StdEncoding.DecodeString(input)
-	if err != nil {
-		return err
-	}
-	if len(decoded) != 32 {
-		return fmt.Errorf("Invalid key: expected 32 bytes long, got %d bytes long.", len(decoded))
-	}
-	return nil
-}
-
 func (peer *WgPeer) validate() error {
-	err := validateWireguardKey(peer.Pubkey)
+	_, err := DecodeWireguardKey(peer.Pubkey)
 	if err != nil {
 		return err
 	}
 	if peer.PresharedKey != nil {
-		err = validateWireguardKey(*peer.PresharedKey)
+		_, err = DecodeWireguardKey(*peer.PresharedKey)
 		if err != nil {
 			return err
 		}
@@ -193,7 +182,7 @@ func atomicSaveIniFile(iniFile *ini.File, toPath string) error {
 	return nil
 }
 
-func decodeKey(strKey string) (*[wgtypes.KeyLen]byte, error) {
+func DecodeWireguardKey(strKey string) (*[wgtypes.KeyLen]byte, error) {
 	// FIXME: We should store this as a byte string to begin with...
 	keySlice, err := base64.StdEncoding.DecodeString(strKey)
 	if err != nil {
@@ -225,13 +214,13 @@ func (ctx *ServerContext) ApplyDeviceConfig() error {
 	defer wgClient.Close()
 	newPeers := make([]wgtypes.PeerConfig, 0, len(ctx.ConfFile.Peers))
 	for _, peer := range ctx.ConfFile.Peers {
-		pubkey, err := decodeKey(peer.Pubkey)
+		pubkey, err := DecodeWireguardKey(peer.Pubkey)
 		if err != nil {
 			return err
 		}
 		var psk wgtypes.Key
 		if peer.PresharedKey != nil {
-			parsedPsk, err := decodeKey(*peer.PresharedKey)
+			parsedPsk, err := DecodeWireguardKey(*peer.PresharedKey)
 			if err != nil {
 				return err
 			}

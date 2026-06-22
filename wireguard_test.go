@@ -74,13 +74,13 @@ func TestImportInSectionCommentNotRead(t *testing.T) {
 }
 
 func TestDecodeKey(t *testing.T) {
-	if _, err := decodeKey(validKey()); err != nil {
+	if _, err := DecodeWireguardKey(validKey()); err != nil {
 		t.Fatalf("valid key rejected: %v", err)
 	}
-	if _, err := decodeKey("not!base64!"); err == nil {
+	if _, err := DecodeWireguardKey("not!base64!"); err == nil {
 		t.Fatal("expected error for non-base64 key")
 	}
-	if _, err := decodeKey(base64.StdEncoding.EncodeToString(make([]byte, 16))); err == nil {
+	if _, err := DecodeWireguardKey(base64.StdEncoding.EncodeToString(make([]byte, 16))); err == nil {
 		t.Fatal("expected error for wrong-length key")
 	}
 }

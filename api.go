@@ -277,11 +277,11 @@ func handleEnrolPeer(ctx *ServerContext, r *http.Request, resp http.ResponseWrit
 		if err := json.Unmarshal(requestBytes, &requestObj); err != nil {
 			return nil, WrapError(err, 400, true)
 		}
-		if err := validateWireguardKey(requestObj.NewPubKey); err != nil {
+		if _, err := DecodeWireguardKey(requestObj.NewPubKey); err != nil {
 			return nil, WrapError(err, 400, true)
 		}
 		if requestObj.NewPSK != nil {
-			if err := validateWireguardKey(*requestObj.NewPSK); err != nil {
+			if _, err := DecodeWireguardKey(*requestObj.NewPSK); err != nil {
 				return nil, WrapError(err, 400, true)
 			}
 		}
