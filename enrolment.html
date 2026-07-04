@@ -91,20 +91,27 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
     <div id="DataContainer">
         <h2>Your VPN account is ready.</h2>
-        <h3>Private keys were generated in your browser and did not leave this device.</h3>
+        <h3>Download the WireGuard client for your platform <a href="https://www.wireguard.com/install/" target="_blank">here</a>.</h3>
         <button id="DownloadConfigButton"
             style="margin-top: 10px; width: 240px;" 
-            onclick="downloadWgConfig();">Download Config (Desktop clients)</button>
+            onclick="downloadWgConfig();">Download Config File<br/>(desktop clients)</button>
         <button id="ShowQRCodeButton"
             style="margin: 10px; width: 240px;" 
-            onclick="displayQRCode();">Show QR code (Mobile clients)</button>
+            onclick="displayQRCode();">Show QR code<br/>(mobile clients)</button>
         <button id="HideQRCodeButton" class="hidden"
             style="margin: 10px; width: 240px;" 
             onclick="hideQRCode();">Hide QR code</button>
         <div class="hidden" id="qrcode" style="width: 400px; height: 400px;"></div>
+        <span>Private keys were generated in your browser and did not leave this device.</span>
     </div>
 </div>
 <script>
+    const beforeUnloadHandler = (event) => {
+        event.preventDefault();
+        event.returnValue = true;
+    };
+    window.addEventListener("beforeunload", beforeUnloadHandler);
+
     async function generateWgConfig() {
         let x25519_key = await window.crypto.subtle.generateKey('X25519', true, ['deriveKey', 'deriveBits']);
         let pskBytes = new Uint8Array(32);
@@ -162,11 +169,12 @@ PersistentKeepalive = 25
     if (!window.confirm("You can only open this page once. Continue?")) {
         wgConfig = Promise.reject(new Error("User rejected operation")); // just in case...
         window.location.replace("about:blank");
-    } else {
-        wgConfig = generateWgConfig();
     }
 
     async function downloadWgConfig() {
+        if (wgConfig == null) {
+            wgConfig = generateWgConfig();
+        }
         let finishedConfig;
         try {
             finishedConfig = await wgConfig;
@@ -189,6 +197,9 @@ PersistentKeepalive = 25
         window.URL.revokeObjectURL(url)
     }
     async function displayQRCode() {
+        if (wgConfig == null) {
+            wgConfig = generateWgConfig();
+        }
         try {
             await wgConfig;
         } catch(err) {
@@ -200,6 +211,9 @@ PersistentKeepalive = 25
         document.getElementById("HideQRCodeButton").classList.remove("hidden");
     }
     async function hideQRCode() {
+        if (wgConfig == null) {
+            wgConfig = generateWgConfig();
+        }
         try {
             await wgConfig;
         } catch(err) {
