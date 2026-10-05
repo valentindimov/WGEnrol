@@ -30,7 +30,7 @@ You can also run `test.sh` or `test.cmd` respectively to run unit tests for some
 
 
 ## How to Run
-The application uses a YAML-formatted config file. Check [testfiles/test.conf](./testfiles/test.conf) for an example.
+The application uses a YAML-formatted config file. Check [testfiles/test_config.yaml](./testfiles/test_config.yaml) for an example.
 Create this file and store it somewhere convenient, e.g. in `/etc/`.
 
 The application manages the peer list of the Wireguard interface referenced by `wireguard.ifname` in the config file.

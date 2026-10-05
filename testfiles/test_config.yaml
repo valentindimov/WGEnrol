@@ -1,15 +1,23 @@
 server:
+  # Bind address for the Web interface
   listenOn: "127.0.0.1:8080"
+  # TLS settings (if TLS is enabled)
   tls:
     enabled: false
+    # The full certificate chain is required; the cert and key are reloaded dynamically if they change e.g. due to renewal.
     # certFile: "testfiles/test_cert.pem"
     # keyFile: "testfiles/test_key.pem"
 
+# Settings for the administration interface (does not affect the enrolment page)
 admin:
+  # Source IP filtr for clients
   ipFilter: [ "127.0.0.0/8" ]
+  # List of users and passwords. The passwords are in bcrypt2 format.
   users:
     admin: "$2a$08$noE9l0k/bSRj0cyRaVsDsue4L2WEmHP9pHxfGOJ026xEttfFn3TFq" # "password"
 
+# When you create a new peer in the admin interface, WGEnrol can send an email with the registration link.
+# This block is the configuration for the SMTP relay it uses to do so.
 smtp:
   enabled: false
   # host: "smtp.example.com"
@@ -18,12 +26,25 @@ smtp:
   # password: "password123"
   # from: "user@example.com"
 
+# Wireguard interface settings
 wireguard:
+  # File used to store peer information.
+  # It's in an INI format compatible with wg-quick (and won't change anything apart from [Peer] sections).
+  # However, you can also use a fully separate file as well, e.g. because you don't use wg-quick to manage the interface.
   confFile: "testfiles/test.conf"
+  # Name of the WireGuard interface (or the tunnel name on Windows) that WGEnrol will manage.
+  # It will drop and replace the interface's peer list with the peers saved in the confFile.
   ifname: "wgenrol-test"
 
+# When a user opens the enrolment page, their browser generates WireGuard keys and fetches some information from the server
+# to create a complete Wireguard config. This block contains the options you can specify for this.
 advertise:
+  # Externally-visible Wireguard endpoint of the interface
   endpoint: "127.0.0.1:51820"
+  # Normally, WGEnrol reads the networks assigned to `wireguard.ifname` and advertises those as its `AllowedIPs`.
+  # However, if you want to advertise more subnets than this (e.g. because there's other networks that you are routing to),
+  # you can specify them here and they will be added to the AllowedIPs when a client enrols.
   additionalSubnets:
     - "10.164.0.0/16"
+  # Controls whether or not clients should have a "DNS" entry in their config pointing to WGEnrol's node.
   advertiseDNS: false
