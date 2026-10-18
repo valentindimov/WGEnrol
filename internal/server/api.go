@@ -24,13 +24,13 @@ import (
 	"thebasstoon.com/wgenrol/internal/wireguard"
 )
 
-type WgPeerDTO struct {
+type wgPeerDTO struct {
 	Pubkey       string
 	PresharedKey *string
 	Comment      string
 }
 
-func (peerDTO *WgPeerDTO) fromDTO(ctx *config.ServerContext) (*wireguard.WgPeer, error) {
+func (peerDTO *wgPeerDTO) fromDTO(ctx *config.ServerContext) (*wireguard.WgPeer, error) {
 	allowedIPs, err := ctx.ConfFile.FindSuitableAllowedIPs()
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func (peerDTO *WgPeerDTO) fromDTO(ctx *config.ServerContext) (*wireguard.WgPeer,
 }
 
 // GET /
-func handleGetRoot(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleGetRoot(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	var sortedPeersList []wireguard.WgPeer
 	for _, peer := range ctx.ConfFile.Peers {
 		sortedPeersList = append(sortedPeersList, peer)
@@ -55,79 +55,79 @@ func handleGetRoot(ctx *config.ServerContext, r *http.Request, resp http.Respons
 		"peers":       sortedPeersList,
 		"smtpEnabled": ctx.Config.Smtp.Enabled,
 	}); err != nil {
-		return nil, WrapError(err, 500, false)
+		return nil, wrapError(err, 500, false)
 	} else {
 		return tplResult.Bytes(), nil
 	}
 }
 
 // PUT /peer
-func handleEditPeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleEditPeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	type EditPeerRequest struct {
 		Pubkey  string
 		Comment string
 	}
 	requestBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
-		return nil, WrapError(readErr, 400, false)
+		return nil, wrapError(readErr, 400, false)
 	}
 	var requestPeerObj EditPeerRequest
 	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
-		return nil, WrapError(err, 400, true)
+		return nil, wrapError(err, 400, true)
 	}
 	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Pubkey]; ok {
 		newPeer := ctx.ConfFile.Peers[requestPeerObj.Pubkey]
 		newPeer.Comment = requestPeerObj.Comment
 		ctx.ConfFile.Peers[requestPeerObj.Pubkey] = newPeer
 	} else {
-		return nil, WrapError(fmt.Errorf("Peer not found: %s", requestPeerObj.Pubkey), 404, true)
+		return nil, wrapError(fmt.Errorf("Peer not found: %s", requestPeerObj.Pubkey), 404, true)
 	}
 	if err := ctx.ConfFile.Commit(); err != nil {
-		return nil, WrapError(err, 500, false)
+		return nil, wrapError(err, 500, false)
 	}
 	return nil, nil
 }
 
 // POST /peer
-func handleCreatePeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleCreatePeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	requestBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
-		return nil, WrapError(readErr, 400, false)
+		return nil, wrapError(readErr, 400, false)
 	}
 	type SetPeerPubkeyRequest struct {
-		Peer             WgPeerDTO
+		Peer             wgPeerDTO
 		RegistrationLink *string
 		UserEmail        *string
 	}
 	var requestPeerObj SetPeerPubkeyRequest
 	if err := json.Unmarshal(requestBytes, &requestPeerObj); err != nil {
-		return nil, WrapError(err, 400, true)
+		return nil, wrapError(err, 400, true)
 	}
 	if requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
 		if _, err := mail.ParseAddress(*requestPeerObj.UserEmail); err != nil {
-			return nil, WrapError(fmt.Errorf("Invalid request: %s is not a valid email", *requestPeerObj.UserEmail), 400, true)
+			return nil, wrapError(fmt.Errorf("Invalid request: %s is not a valid email", *requestPeerObj.UserEmail), 400, true)
 		}
 		if requestPeerObj.RegistrationLink == nil {
-			return nil, WrapError(fmt.Errorf("Invalid request: RegistrationLink cannot be empty if UserEmail is specified"), 400, true)
+			return nil, wrapError(fmt.Errorf("Invalid request: RegistrationLink cannot be empty if UserEmail is specified"), 400, true)
 		} else if _, err := url.ParseRequestURI(*requestPeerObj.RegistrationLink); err != nil {
-			return nil, WrapError(fmt.Errorf("Invalid request: %s is not a valid link", *requestPeerObj.RegistrationLink), 400, true)
+			return nil, wrapError(fmt.Errorf("Invalid request: %s is not a valid link", *requestPeerObj.RegistrationLink), 400, true)
 		}
 	}
 	peerObj, err := requestPeerObj.Peer.fromDTO(ctx)
 	if err != nil {
-		return nil, WrapError(err, 400, true)
+		return nil, wrapError(err, 400, true)
 	}
 	if err := peerObj.Validate(); err != nil {
 		log.Printf("Validation of %v failed.", requestPeerObj.Peer)
-		return nil, WrapError(err, 400, true)
+		return nil, wrapError(err, 400, true)
 	}
 	if _, ok := ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey]; ok {
-		return nil, WrapError(fmt.Errorf("Peer already exists"), 400, true)
+		return nil, wrapError(fmt.Errorf("Peer already exists"), 400, true)
 	} else {
 		ctx.ConfFile.Peers[requestPeerObj.Peer.Pubkey] = *peerObj
 	}
 	if err := ctx.ConfFile.Commit(); err != nil {
-		return nil, WrapError(err, 500, true)
+		return nil, wrapError(err, 500, true)
 	}
 	if ctx.Config.Smtp.Enabled && requestPeerObj.UserEmail != nil && len(*requestPeerObj.UserEmail) > 0 {
 		go func() {
@@ -154,19 +154,19 @@ func handleCreatePeer(ctx *config.ServerContext, r *http.Request, resp http.Resp
 
 // DELETE /peer/{pubkey}
 // pubkey must be encoded as URL-safe base64 (and not the standard Base64 WireGuard keys are usually encoded as)
-func handleDeletePeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleDeletePeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	pubkeyBase64Url := r.PathValue("pubkey")
 	pubkeyDecoded, decodeErr := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyBase64Url)
 	if decodeErr != nil {
-		return nil, WrapError(decodeErr, 400, true)
+		return nil, wrapError(decodeErr, 400, true)
 	}
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyDecoded)
 	if _, ok := ctx.ConfFile.Peers[pubkey]; !ok {
-		return nil, WrapError(fmt.Errorf("Peer not found."), 404, true)
+		return nil, wrapError(fmt.Errorf("Peer not found."), 404, true)
 	}
 	delete(ctx.ConfFile.Peers, pubkey)
 	if err := ctx.ConfFile.Commit(); err != nil {
-		return nil, WrapError(err, 500, false)
+		return nil, wrapError(err, 500, false)
 	}
 	return nil, nil
 }
@@ -203,23 +203,23 @@ func computeClientConfigAllowedIPs(peerAllowedIps []netip.Prefix, deviceNets *[]
 
 // GET /peer/{pubkeyPreimage}
 // pubkeyPreimage must be a Base64-URL-encoded string and a valid preimage for a public key stored in the WireGuard configuration
-func handleGetPeerEnrolmentPage(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleGetPeerEnrolmentPage(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	pubkeyPreimageBase64Url := r.PathValue("pubkeyPreimage")
 	pubkeyPreimageDecoded, decodeErr := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if decodeErr != nil {
-		return nil, WrapError(decodeErr, 400, true)
+		return nil, wrapError(decodeErr, 400, true)
 	}
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
 	deviceNets, err := ctx.ConfFile.GetDeviceNets()
 	if err != nil {
-		return nil, WrapError(err, 500, false)
+		return nil, wrapError(err, 500, false)
 	}
 
 	if peer, ok := ctx.ConfFile.Peers[pubkey]; ok {
 		peerAddrs, err := computeClientConfigAllowedIPs(peer.AllowedIps, deviceNets)
 		if err != nil {
-			return nil, WrapError(err, 500, false)
+			return nil, wrapError(err, 500, false)
 		}
 		var response bytes.Buffer
 		vpnNetworksStr := make([]string, 0, len(*deviceNets))
@@ -232,7 +232,7 @@ func handleGetPeerEnrolmentPage(ctx *config.ServerContext, r *http.Request, resp
 		}
 		advertisedPublicKey, err := ctx.ConfFile.GetDevicePubkey()
 		if err != nil {
-			return nil, WrapError(err, 500, false)
+			return nil, wrapError(err, 500, false)
 		}
 		if err := enrolmentHtmlTpl.Execute(&response, map[string]any{
 			"peerAddresses":      peerAddrs,
@@ -242,17 +242,17 @@ func handleGetPeerEnrolmentPage(ctx *config.ServerContext, r *http.Request, resp
 			"advertisedNetworks": strings.Join(append(vpnNetworksStr, ctx.Config.Advertise.AdditionalSubnets...), ","),
 			"advertisedEndpoint": ctx.Config.Advertise.Endpoint,
 		}); err != nil {
-			return nil, WrapError(err, 500, false)
+			return nil, wrapError(err, 500, false)
 		} else {
 			return response.Bytes(), nil
 		}
 	} else {
-		return nil, WrapError(fmt.Errorf("Not Found"), 404, false)
+		return nil, wrapError(fmt.Errorf("Not Found"), 404, false)
 	}
 }
 
 // PUT /peer/{pubkeyPreimage}
-func handleEnrolPeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleEnrolPeer(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	type SetPeerPubkeyRequest struct {
 		NewPubKey string
 		NewPSK    *string
@@ -261,7 +261,7 @@ func handleEnrolPeer(ctx *config.ServerContext, r *http.Request, resp http.Respo
 	pubkeyPreimageBase64Url := r.PathValue("pubkeyPreimage")
 	pubkeyPreimageDecoded, decodeErr := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(pubkeyPreimageBase64Url)
 	if decodeErr != nil {
-		return nil, WrapError(decodeErr, 400, false)
+		return nil, wrapError(decodeErr, 400, false)
 	}
 	pubkeyBytes := sha256.Sum256([]byte(pubkeyPreimageDecoded))
 	pubkey := base64.StdEncoding.EncodeToString(pubkeyBytes[:])
@@ -274,18 +274,18 @@ func handleEnrolPeer(ctx *config.ServerContext, r *http.Request, resp http.Respo
 	if peerObj, ok := ctx.ConfFile.Peers[pubkey]; ok {
 		requestBytes, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
-			return nil, WrapError(readErr, 400, false)
+			return nil, wrapError(readErr, 400, false)
 		}
 		var requestObj SetPeerPubkeyRequest
 		if err := json.Unmarshal(requestBytes, &requestObj); err != nil {
-			return nil, WrapError(err, 400, true)
+			return nil, wrapError(err, 400, true)
 		}
 		if _, err := wireguard.DecodeWireguardKey(requestObj.NewPubKey); err != nil {
-			return nil, WrapError(err, 400, true)
+			return nil, wrapError(err, 400, true)
 		}
 		if requestObj.NewPSK != nil {
 			if _, err := wireguard.DecodeWireguardKey(*requestObj.NewPSK); err != nil {
-				return nil, WrapError(err, 400, true)
+				return nil, wrapError(err, 400, true)
 			}
 		}
 		delete(ctx.ConfFile.Peers, pubkey)
@@ -293,26 +293,26 @@ func handleEnrolPeer(ctx *config.ServerContext, r *http.Request, resp http.Respo
 		peerObj.PresharedKey = requestObj.NewPSK
 		ctx.ConfFile.Peers[requestObj.NewPubKey] = peerObj
 		if err := ctx.ConfFile.Commit(); err != nil {
-			return nil, WrapError(err, 500, false)
+			return nil, wrapError(err, 500, false)
 		}
 	} else {
-		return nil, WrapError(fmt.Errorf("Not Found"), 404, true)
+		return nil, wrapError(fmt.Errorf("Not Found"), 404, true)
 	}
 	return nil, nil
 }
 
 // GET /login
-func handleGetLogin(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handleGetLogin(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	var tplResult bytes.Buffer
 	if err := loginHtmlTpl.Execute(&tplResult, map[string]any{}); err != nil {
-		return nil, WrapError(err, 500, false)
+		return nil, wrapError(err, 500, false)
 	} else {
 		return tplResult.Bytes(), nil
 	}
 }
 
 // POST /login
-func handlePostLogin(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
+func handlePostLogin(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
 	// TODO: Login rate limit per IP with backoff
 	type LoginRequest struct {
 		Username string
@@ -320,11 +320,11 @@ func handlePostLogin(ctx *config.ServerContext, r *http.Request, resp http.Respo
 	}
 	requestBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
-		return nil, WrapError(readErr, 400, false)
+		return nil, wrapError(readErr, 400, false)
 	}
 	var requestObj LoginRequest
 	if err := json.Unmarshal(requestBytes, &requestObj); err != nil {
-		return nil, WrapError(fmt.Errorf("Malformed request"), 400, true)
+		return nil, wrapError(fmt.Errorf("Malformed request"), 400, true)
 	}
 
 	passwordHash, ok := ctx.Config.Admin.Users[requestObj.Username]
@@ -334,7 +334,7 @@ func handlePostLogin(ctx *config.ServerContext, r *http.Request, resp http.Respo
 	}
 	// I really hope the compiler doesn't optimize this away...
 	if passwordMatchErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(requestObj.Password)); passwordMatchErr != nil || !ok {
-		return nil, WrapError(fmt.Errorf("Wrong username or password"), 401, true)
+		return nil, wrapError(fmt.Errorf("Wrong username or password"), 401, true)
 	}
 
 	newToken := rand.Text()
@@ -362,8 +362,8 @@ func handlePostLogin(ctx *config.ServerContext, r *http.Request, resp http.Respo
 }
 
 // POST /logout
-func handlePostLogout(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError) {
-	if token, err := GetSessionToken(r); token != nil && err == nil {
+func handlePostLogout(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError) {
+	if token, err := getSessionToken(r); token != nil && err == nil {
 		delete(ctx.ValidSessionTokens, *token)
 	}
 	http.SetCookie(resp, &http.Cookie{

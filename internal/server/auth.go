@@ -10,7 +10,7 @@ import (
 	"thebasstoon.com/wgenrol/internal/config"
 )
 
-func GetSessionToken(request *http.Request) (*string, error) {
+func getSessionToken(request *http.Request) (*string, error) {
 	sessionCookie, err := request.Cookie("session")
 	if err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func GetSessionToken(request *http.Request) (*string, error) {
 	return &token, nil
 }
 
-func ApplyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
+func applyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
 	// Check IP filter
 	hostPort, err := netip.ParseAddrPort(request.RemoteAddr)
 	if err != nil {
@@ -46,9 +46,9 @@ func ApplyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ct
 	return nil
 }
 
-func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
+func authenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
 	// Check session cookie
-	token, err := GetSessionToken(request)
+	token, err := getSessionToken(request)
 	if err != nil {
 		http.Redirect(responseWriter, request, "/login", http.StatusFound)
 		return fmt.Errorf("Request from host %s missing/malformed session cookie (%s)", request.RemoteAddr, err.Error())

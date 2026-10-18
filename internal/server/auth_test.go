@@ -23,10 +23,10 @@ func TestWrapHandlerConcurrency(t *testing.T) {
 		Config:             &config.WgEnrolConfig{},
 		ValidSessionTokens: map[string]time.Time{tok: time.Now().Add(time.Hour)},
 	}
-	authed := WrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *HandlerError) {
+	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
-	writer := WrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *HandlerError) {
+	writer := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		c.ValidSessionTokens["other"] = time.Now().Add(time.Hour)
 		delete(c.ValidSessionTokens, "other")
 		return nil, nil
@@ -70,7 +70,7 @@ func TestWrapHandlerConcurrency(t *testing.T) {
 // session should be required to authenticate.
 func TestLoginReachable(t *testing.T) {
 	ctx := newLoginCtx()
-	login := WrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
+	login := wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"password"}`))
 	req.RemoteAddr = "127.0.0.1:5555"
 	rec := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func TestCorrectLoginSucceeds(t *testing.T) {
 func TestLoginIPFiltered(t *testing.T) {
 	ctx := newLoginCtx()
 	ctx.AdminIpFilter = prefixes("192.168.0.0/16")
-	login := WrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
+	login := wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
 
 	off := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"password"}`))
 	off.RemoteAddr = "9.9.9.9:5555"
@@ -136,7 +136,7 @@ func TestAdminRouteIPFiltered(t *testing.T) {
 	ctx.AdminIpFilter = prefixes("192.168.0.0/16")
 	tok := "TOKENVALUE000000000000000000"
 	ctx.ValidSessionTokens[tok] = time.Now().Add(time.Hour)
-	authed := WrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *HandlerError) {
+	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
 	req := httptest.NewRequest("GET", "/", nil)
@@ -155,7 +155,7 @@ func TestAdminRouteAllowedWithSession(t *testing.T) {
 	tok := "TOKENVALUE000000000000000000"
 	ctx.ValidSessionTokens[tok] = time.Now().Add(time.Hour)
 	reached := false
-	authed := WrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *HandlerError) {
+	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		reached = true
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
@@ -171,7 +171,7 @@ func TestAdminRouteAllowedWithSession(t *testing.T) {
 // A request without a session cookie is redirected to /login.
 func TestNoSessionRedirects(t *testing.T) {
 	ctx := newLoginCtx()
-	authed := WrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *HandlerError) {
+	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		t.Fatal("handler should not run without a session")
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
@@ -188,7 +188,7 @@ func TestNoSessionRedirects(t *testing.T) {
 // rejected rather than read in full.
 func TestBodySizeLimited(t *testing.T) {
 	ctx := newLoginCtx()
-	login := WrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
+	login := wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
 	big := bytes.Repeat([]byte("a"), 2*1024*1024) // 2 MB > 1 MB cap
 	req := httptest.NewRequest("POST", "/login", bytes.NewReader(big))
 	req.RemoteAddr = "127.0.0.1:5555"

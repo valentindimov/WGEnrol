@@ -44,27 +44,27 @@ var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTem
 var loginHtmlTemplateString string
 var loginHtmlTpl = compileTemplateOrPanic("login.html", loginHtmlTemplateString)
 
-type HandlerError struct {
+type handlerError struct {
 	status  int
 	message *string
 	visible bool
 }
 
-func (e *HandlerError) Error() string {
+func (e *handlerError) Error() string {
 	return fmt.Sprintf("%d %s", e.status, *e.message)
 }
 
-func WrapError(err error, status int, visible bool) *HandlerError {
+func wrapError(err error, status int, visible bool) *handlerError {
 	errMsg := err.Error()
-	return &HandlerError{status: status, visible: visible, message: &errMsg}
+	return &handlerError{status: status, visible: visible, message: &errMsg}
 }
 
-func WrapHandler(
-	handler func(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError),
+func wrapHandler(
+	handler func(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError),
 	ctx *config.ServerContext,
 	contentType string,
 	authenticated bool,
-	applyIpFilter bool,
+	doApplyIpFilter bool,
 	pathMask *string,
 	maskErrors bool,
 ) http.HandlerFunc {
@@ -77,14 +77,14 @@ func WrapHandler(
 			responseWriter.Header().Set("Strict-Transport-Security", "max-age=2592000; includeSubDomains")
 		}
 		// Apply filters / auth
-		if applyIpFilter {
-			if err := ApplyIpFilter(request, responseWriter, ctx); err != nil {
+		if doApplyIpFilter {
+			if err := applyIpFilter(request, responseWriter, ctx); err != nil {
 				log.Printf("%s", err.Error())
 				return
 			}
 		}
 		if authenticated {
-			if err := AuthenticateRequest(request, responseWriter, ctx); err != nil {
+			if err := authenticateRequest(request, responseWriter, ctx); err != nil {
 				log.Printf("%s", err.Error())
 				return
 			}
@@ -118,13 +118,13 @@ func WrapHandler(
 	})
 }
 
-type CertCache struct {
+type certCache struct {
 	lock            sync.Mutex
 	cert            *tls.Certificate
 	certMod, keyMod *time.Time
 }
 
-func GetCertificate(_ *tls.ClientHelloInfo, ctx *config.ServerContext, cache *CertCache) (*tls.Certificate, error) {
+func getCertificate(_ *tls.ClientHelloInfo, ctx *config.ServerContext, cache *certCache) (*tls.Certificate, error) {
 	if cache == nil {
 		log.Fatal("CertCache is missing but TLS is enabled.") // This should never happen, but just in case..
 	}
@@ -166,26 +166,26 @@ func GetCertificate(_ *tls.ClientHelloInfo, ctx *config.ServerContext, cache *Ce
 
 func ListenAndServe(ctx *config.ServerContext) {
 	// Login/logout
-	http.HandleFunc("GET /login", WrapHandler(handleGetLogin, ctx, "text/html", false, true, nil, false))
-	http.HandleFunc("POST /login", WrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false))
-	http.HandleFunc("POST /logout", WrapHandler(handlePostLogout, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("GET /login", wrapHandler(handleGetLogin, ctx, "text/html", false, true, nil, false))
+	http.HandleFunc("POST /login", wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false))
+	http.HandleFunc("POST /logout", wrapHandler(handlePostLogout, ctx, "text/plain", true, true, nil, false))
 	// Admin panel functions
-	http.HandleFunc("GET /", WrapHandler(handleGetRoot, ctx, "text/html", true, true, nil, false))
-	http.HandleFunc("PUT /peer", WrapHandler(handleEditPeer, ctx, "text/plain", true, true, nil, false))
-	http.HandleFunc("POST /peer", WrapHandler(handleCreatePeer, ctx, "text/plain", true, true, nil, false))
-	http.HandleFunc("DELETE /peer/{pubkey}", WrapHandler(handleDeletePeer, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("GET /", wrapHandler(handleGetRoot, ctx, "text/html", true, true, nil, false))
+	http.HandleFunc("PUT /peer", wrapHandler(handleEditPeer, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("POST /peer", wrapHandler(handleCreatePeer, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("DELETE /peer/{pubkey}", wrapHandler(handleDeletePeer, ctx, "text/plain", true, true, nil, false))
 	// Peer enrolment
 	pubkeyPreimageMask := "/peer/{pubkeyPreimage}"
-	http.HandleFunc("GET /peer/{pubkeyPreimage}", WrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html", false, false, &pubkeyPreimageMask, true))
-	http.HandleFunc("PUT /peer/{pubkeyPreimage}", WrapHandler(handleEnrolPeer, ctx, "text/plain", false, false, &pubkeyPreimageMask, true))
+	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html", false, false, &pubkeyPreimageMask, true))
+	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapHandler(handleEnrolPeer, ctx, "text/plain", false, false, &pubkeyPreimageMask, true))
 
 	// Define the server (still uses the DefaultServeMux handler which http.HandleFunc adds to)
-	var certCache CertCache
+	var certCache certCache
 	server := http.Server{
 		Addr: *ctx.Config.Server.ListenOn,
 		TLSConfig: &tls.Config{
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				return GetCertificate(info, ctx, &certCache)
+				return getCertificate(info, ctx, &certCache)
 			},
 			MinVersion: tls.VersionTLS12,
 		},
