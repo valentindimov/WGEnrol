@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/netip"
 	"time"
-
-	"thebasstoon.com/wgenrol/internal/config"
 )
 
 func getSessionToken(request *http.Request) (*string, error) {
@@ -23,7 +21,7 @@ func getSessionToken(request *http.Request) (*string, error) {
 	return &token, nil
 }
 
-func applyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
+func applyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	// Check IP filter
 	hostPort, err := netip.ParseAddrPort(request.RemoteAddr)
 	if err != nil {
@@ -46,20 +44,24 @@ func applyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ct
 	return nil
 }
 
-func authenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
+func authenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
 	// Check session cookie
 	token, err := getSessionToken(request)
 	if err != nil {
 		http.Redirect(responseWriter, request, "/login", http.StatusFound)
 		return fmt.Errorf("Request from host %s missing/malformed session cookie (%s)", request.RemoteAddr, err.Error())
 	}
-	validity, ok := ctx.ValidSessionTokens[*token]
-	if ok && (validity.Compare(time.Now()) == 1) {
-		// Validity is extended to 1 hour after the last activity
-		ctx.ValidSessionTokens[*token] = time.Now().Add(time.Hour)
-		return nil
-	} else {
+	// TouchSession atomically authenticates the token and slides its expiry.
+	// A database failure here is a hard 500, not a redirect: a failing store
+	// must neither lock every admin out nor silently bypass the check.
+	valid, err := ctx.Sessions.TouchSession(*token, time.Now().Add(time.Hour))
+	if err != nil {
+		http.Error(responseWriter, "Internal Server Error", http.StatusInternalServerError)
+		return fmt.Errorf("Request from host %s: session store failure: %s", request.RemoteAddr, err.Error())
+	}
+	if !valid {
 		http.Redirect(responseWriter, request, "/login", http.StatusFound)
 		return fmt.Errorf("Request from host %s invalid session cookie", request.RemoteAddr)
 	}
+	return nil
 }

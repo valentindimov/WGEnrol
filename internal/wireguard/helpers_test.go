@@ -1,22 +1,29 @@
 package wireguard
 
 import (
-	"encoding/base64"
+	"crypto/rand"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-// validKey returns a syntactically valid (32-byte) WireGuard key in std base64.
-func validKey() string { return base64.StdEncoding.EncodeToString(make([]byte, 32)) }
+// makeKey returns a new random 32-byte key.
+func makeKey(t *testing.T) Key {
+	t.Helper()
+	var key Key
+	if _, err := rand.Read(key[:]); err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
 
 // writeConf writes a minimal [Interface] config plus the given peer block to a
-// temp file and returns its path.
+// temp file and returns its path. Fixture builder for ImportPeersFromINI.
 func writeConf(t *testing.T, peerBlock string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "wg.conf")
-	conf := "[Interface]\nPrivateKey = " + validKey() + "\nAddress = 10.64.0.1/24\nListenPort = 51820\n\n" + peerBlock
+	conf := "[Interface]\nPrivateKey = " + makeKey(t).String() + "\nAddress = 10.64.0.1/24\nListenPort = 51820\n\n" + peerBlock
 	if err := os.WriteFile(p, []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}

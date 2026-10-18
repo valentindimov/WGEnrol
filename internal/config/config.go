@@ -5,11 +5,8 @@ import (
 	"net/netip"
 	"os"
 	"strings"
-	"sync"
-	"time"
 
 	"gopkg.in/yaml.v3"
-	"thebasstoon.com/wgenrol/internal/wireguard"
 )
 
 type WgEnrolConfig struct {
@@ -33,9 +30,13 @@ type WgEnrolConfig struct {
 		From     *string // required if enabled
 		Port     *int    // required if enabled
 	}
+	Storage struct {
+		Backend string  `yaml:"backend"` // "sqlite" (default) or "postgres"
+		File    *string `yaml:"file"`    // sqlite database path; required for sqlite
+		Dsn     *string `yaml:"dsn"`     // postgres connection string; required for postgres
+	}
 	Wireguard struct {
-		Ifname   *string
-		ConfFile *string `yaml:"confFile"` // required
+		Ifname *string
 	}
 	Advertise struct {
 		Endpoint          *string  // required
@@ -44,7 +45,10 @@ type WgEnrolConfig struct {
 	}
 }
 
-func validateIPNetList(input []string) ([]netip.Prefix, error) {
+// ParseIPNetList parses a list of CIDR strings, trimming surrounding spaces
+// and masking each entry. Exported for server.NewContext, which builds the
+// admin IP allowlist from the parsed config.
+func ParseIPNetList(input []string) ([]netip.Prefix, error) {
 	nets := make([]netip.Prefix, 0, len(input))
 	if len(input) > 0 {
 		for _, addr := range input {
@@ -58,16 +62,34 @@ func validateIPNetList(input []string) ([]netip.Prefix, error) {
 	return nets, nil
 }
 
-type ServerContext struct {
-	StateMutex sync.Mutex
-	ConfFile   *wireguard.WgConf
-	Config     *WgEnrolConfig
-
-	AdminIpFilter      []netip.Prefix
-	ValidSessionTokens map[string]time.Time // Maps the token to the expiry time
+// normalizeStorage validates the mandatory storage block and fills the
+// backend default. On success, cmd can open the store by branching on
+// Storage.Backend alone.
+func normalizeStorage(cfg *WgEnrolConfig) error {
+	backend := strings.ToLower(strings.Trim(cfg.Storage.Backend, " "))
+	if backend == "" {
+		backend = "sqlite"
+	}
+	switch backend {
+	case "sqlite":
+		if cfg.Storage.File == nil {
+			return fmt.Errorf("storage.file is required for the sqlite storage backend")
+		}
+	case "postgres":
+		if cfg.Storage.File != nil {
+			return fmt.Errorf("storage.file is only valid with the sqlite storage backend")
+		}
+		if cfg.Storage.Dsn == nil {
+			return fmt.Errorf("storage.dsn is required for the postgres storage backend")
+		}
+	default:
+		return fmt.Errorf("Unknown storage backend %s (supported: sqlite, postgres)", cfg.Storage.Backend)
+	}
+	cfg.Storage.Backend = backend
+	return nil
 }
 
-func ParseConfigFile(path string) (*ServerContext, error) {
+func ParseConfigFile(path string) (*WgEnrolConfig, error) {
 	// Read and unmarshal the YAML config file
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
@@ -98,38 +120,25 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 			return nil, fmt.Errorf("smtp.from parameter is required")
 		}
 	}
-	if result.Wireguard.ConfFile == nil {
-		return nil, fmt.Errorf("wireguard.confFile parameter is required")
-	}
 	if result.Wireguard.Ifname == nil {
 		return nil, fmt.Errorf("wireguard.ifname parameter is required")
 	}
 	if result.Advertise.Endpoint == nil {
 		return nil, fmt.Errorf("advertise.endpoints parameter is required")
 	}
-	_, parseAdvNetsErr := validateIPNetList(result.Advertise.AdditionalSubnets)
+	_, parseAdvNetsErr := ParseIPNetList(result.Advertise.AdditionalSubnets)
 	if parseAdvNetsErr != nil {
 		return nil, parseAdvNetsErr
 	}
-	ipFilterNets, err := validateIPNetList(result.Admin.IPFilter)
-	if err != nil {
+	if _, err := ParseIPNetList(result.Admin.IPFilter); err != nil {
 		return nil, err
 	}
 	// Check additional constraints
 	if result.Server.Tls.Enabled && (result.Server.Tls.CertFile == nil || result.Server.Tls.KeyFile == nil) {
 		return nil, fmt.Errorf("server.tls.certFile and server.tls.keyFile are required when TLS is enabled")
 	}
-	// Done checking, construct server context and return
-	confFile, err := wireguard.LoadWgConf(*result.Wireguard.ConfFile, *result.Wireguard.Ifname)
-	if confFile == nil || err != nil {
+	if err := normalizeStorage(&result); err != nil {
 		return nil, err
 	}
-	ctx := ServerContext{
-		ConfFile: confFile,
-		Config:   &result,
-
-		AdminIpFilter:      ipFilterNets,
-		ValidSessionTokens: make(map[string]time.Time),
-	}
-	return &ctx, nil
+	return &result, nil
 }

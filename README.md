@@ -12,7 +12,7 @@ A reasonably modern browser (one that supports the [Web Crypto API](https://deve
 
 
 ## How to Build
-You will need a reasonably recent Go version (tested with 1.24). The project is pure Go, so
+You will need a reasonably recent Go version (tested with 1.27). The project is pure Go, so
 
 ```bash
 go build -o build/wgenrol ./cmd/wgenrol
@@ -20,7 +20,19 @@ go build -o build/wgenrol ./cmd/wgenrol
 
 is sufficient to build it.
 
-You can also run `build.sh` and `test.sh` (on Linux) to build and run unit tests for some components.
+You can also run `build.sh` and `test.sh` (on Linux) to build and run the full test suite.
+
+## Development tools
+The test suite (`test.sh`) uses a few optional tools, installed with `go install`:
+- [`govulncheck`](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) reports known vulnerabilities in the module's dependencies (it needs network access to fetch the vulnerability database);
+- [`staticcheck`](https://staticcheck.dev/) runs additional static analysis beyond `go vet`.
+
+Additionally, an installed `wg` tool and a Chromium-family browser enable the WireGuard device and browser end-to-end tests, which run inside the script's network namespace.
+
+## How to Run
+
+`test.sh` works inside an isolated network namespace and uses Docker for its PostgreSQL storage tests.
+An installed `wg` tool and Chromium or Chrome browser enable additional test coverage when present, but are not required.
 
 
 ## How to Run
@@ -32,13 +44,16 @@ It does NOT create the interface, nor does it configure interface parameters lik
 It ONLY manages the Wireguard peer list, assuming that all the rest is configured in advance, or managed by another tool.
 It supports both Windows and Linux.
 
-Additionally, peers are stored in a separate file, pointed to by `wireguard.confFile` in the YAML config.
-You *can* create the interface using `wg-quick` and control the same `.conf` file using WGEnrol, but you don't have to.
-The file is just used as a database to store the peers and can be completely separate from the configuration used to create the Wireguard interface itself.
+Additionally, peers and pending enrollments are stored in a database, configured through the `storage` block of the YAML config.
+By default this is a SQLite database file (`storage.file`), but a PostgreSQL server can be used instead  - `storage.dsn` is the URL to connect to the database.
+
+For adopting existing Wireguard configurations, the `-import` flag loads peers from a wg-quick `.conf` file into the database (peers already present are skipped) before the server starts.
 
 
 ## Notice on AI usage 
-Though the productive code of WGEnrol is written by hand, AI coding tools are used for static verification, writing tests, and security hardening.
+AI coding tools (with open-source models) are used in the development of WGEnrol for writing code, static verification, writing tests, and security hardening.
+All productive code changes are reviewed and verified by hand.
+High-level documentation is also written manually.
 
 
 ## License

@@ -11,11 +11,14 @@ import (
 	"math/big"
 	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"thebasstoon.com/wgenrol/internal/config"
+	"thebasstoon.com/wgenrol/internal/storage/sqlite"
 )
 
 // bcrypt hash of the password "password" (matches testdata/test_config.yaml).
@@ -33,19 +36,91 @@ func prefixes(ss ...string) []netip.Prefix {
 	return out
 }
 
-// newLoginCtx builds a ServerContext with a single admin user (admin/"password").
-func newLoginCtx() *config.ServerContext {
-	ctx := &config.ServerContext{
-		Config:             &config.WgEnrolConfig{},
-		ValidSessionTokens: map[string]time.Time{},
+// newLoginCtx builds a ServerContext with a single admin user (admin/"password")
+// and a temporary SQLite session store (the handlers under test only touch
+// sessions, not peers).
+func newLoginCtx(t *testing.T) *ServerContext {
+	t.Helper()
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "peers.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ctx := &ServerContext{
+		Config:   &config.WgEnrolConfig{},
+		Sessions: store,
 	}
 	ctx.Config.Admin.Users = map[string]string{"admin": testPasswordHash}
 	return ctx
 }
 
+// deviceControlEnv gates the device-dependent handler tests. test.sh sets it
+// inside its network namespace, where interfaces can be created and the real
+// WireGuard device paths behave deterministically.
+const deviceControlEnv = "WGENROL_TEST_WIREGUARD_DEVICE_CONTROL"
+
+// Package-local interface name, distinct from the other device-gated test
+// families (wgenrol-test in internal/wireguard, wgenrol-serve in cmd) so
+// parallel test binaries cannot collide in the shared namespace.
+const apiIfname = "wgenrol-apitest"
+
+func runIP(t *testing.T, args ...string) {
+	t.Helper()
+	if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
+		t.Fatalf("ip %s: %v: %s", strings.Join(args, " "), err, out)
+	}
+}
+
+// newDeviceCtx is newStoreCtx plus a real WireGuard interface carrying a
+// known address, so device introspection and IP allocation behave
+// deterministically (the interface owns 10.203.0.1/24; allocation starts past
+// the device address).
+func newDeviceCtx(t *testing.T) *ServerContext {
+	t.Helper()
+	if os.Getenv(deviceControlEnv) == "" {
+		t.Skipf("%s is not set: skipping device-dependent handler tests", deviceControlEnv)
+	}
+	runIP(t, "link", "add", apiIfname, "type", "wireguard")
+	t.Cleanup(func() { runIP(t, "link", "del", apiIfname) })
+	ctx := newStoreCtx(t)
+	ifname := apiIfname
+	ctx.Config.Wireguard.Ifname = &ifname
+	runIP(t, "addr", "add", "10.203.0.1/24", "dev", apiIfname)
+	return ctx
+}
+
+// newStoreCtx builds a ServerContext backed by a temporary SQLite store (no
+// device is configured; handlers that would touch the WireGuard device only
+// do so after the paths under test here have already completed).
+func newStoreCtx(t *testing.T) *ServerContext {
+	t.Helper()
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "peers.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ifname := "wgenrol-test-iface"
+	ctx := &ServerContext{
+		Config: &config.WgEnrolConfig{},
+	}
+	ctx.Config.Wireguard.Ifname = &ifname
+	ctx.Store = store
+	ctx.Sessions = store
+	return ctx
+}
+
+// seedSession stores a login session, the store-backed stand-in for seeding
+// the former in-memory token map.
+func seedSession(t *testing.T, ctx *ServerContext, token string, expiry time.Time) {
+	t.Helper()
+	if err := ctx.Sessions.CreateSession(token, expiry); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // tempCertPair copies the repo's test cert/key into a temp dir and returns a
 // ServerContext pointed at the copies, plus the two paths.
-func tempCertPair(t *testing.T) (*config.ServerContext, string, string) {
+func tempCertPair(t *testing.T) (*ServerContext, string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")
@@ -64,7 +139,7 @@ func tempCertPair(t *testing.T) (*config.ServerContext, string, string) {
 	if err := os.WriteFile(keyPath, kb, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx := &config.ServerContext{Config: &config.WgEnrolConfig{}}
+	ctx := &ServerContext{Config: &config.WgEnrolConfig{}}
 	ctx.Config.Server.Tls.CertFile = &certPath
 	ctx.Config.Server.Tls.KeyFile = &keyPath
 	return ctx, certPath, keyPath
