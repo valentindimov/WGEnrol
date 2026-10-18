@@ -47,11 +47,11 @@ Three internal packages plus a thin entry point:
   device introspection (`GetDeviceNets`, `GetDevicePubkey`), key decoding
   (`DecodeWireguardKey`). Entry point: `LoadWgConf(path, ifname)`.
 - `internal/server` — HTTP layer. `server.go`: templates via `go:embed templates/*.html`,
-  compiled at init; `WrapHandler` is the central middleware — it holds `ctx.StateMutex`
+  compiled at init; `wrapHandler` is the central middleware — it holds `ctx.StateMutex`
   for the whole request, sets security headers, applies IP filter + session auth, masks
   errors on unauthenticated routes, caps request bodies at 1 MB, and logs with preimage
   path masking. Routes use Go method+wildcard patterns (`GET /peer/{pubkeyPreimage}`).
-  `GetCertificate` hot-reloads TLS certs by mtime (`CertCache`: falls back to
+  `getCertificate` hot-reloads TLS certs by mtime (`certCache`: falls back to
   last-known-good cert during renewal windows). `auth.go`: session cookie tokens
   (`crypto/rand.Text()`, in-memory map, sliding 1 h expiry) and admin IP allowlist;
   auth failures redirect to /login. `api.go`: handlers for the admin UI (GET /), peer
@@ -66,8 +66,8 @@ Import direction is strictly one-way: cmd → server → config → wireguard; n
 
 - Enrollment: pending peers store base64(SHA-256(preimage)) as their pubkey; the
   preimage link is the capability to register a real pubkey (PUT /peer/{preimage}).
-- Handlers mutate state only under `ctx.StateMutex` (held by `WrapHandler`).
-- Unauthenticated endpoints get masked errors (`HandlerError.visible` + `maskErrors`).
+- Handlers mutate state only under `ctx.StateMutex` (held by `wrapHandler`).
+- Unauthenticated endpoints get masked errors (`handlerError.visible` + `maskErrors`).
 - Login: bcrypt compare against a dummy hash for unknown users (timing defense);
   no rate limiting yet (TODO).
 
@@ -87,10 +87,16 @@ Import direction is strictly one-way: cmd → server → config → wireguard; n
   module path (`thebasstoon.com/wgenrol/internal/…`). Keep the import direction
   strictly one-way (cmd → server → config → wireguard) — no cycles.
 - Handler signature everywhere:
-  `func(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError)`.
+  `func(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *handlerError)`.
+- Export surface is deliberately minimal — only what crosses a package boundary:
+  `server.ListenAndServe`; `config.ParseConfigFile`, `config.ServerContext`, `config.WgEnrolConfig`;
+  and the `wireguard` store/device API (`WgConf`, `WgPeer`, `LoadWgConf`, `DecodeWireguardKey`,
+  the peer/device methods, `WgConf.Peers`). Everything in `internal/server` beyond
+  `ListenAndServe` is unexported (`wrapHandler`, `handlerError`, `wrapError`,
+  `getCertificate`, `certCache`, …) — keep it that way.
 - Error strings are full sentences (capitalized, often with a period): ST1005 is
   intentionally disabled in staticcheck.conf — do not re-enable or rewrite them.
-- Wrap handler errors with `WrapError(err, status, visible)`; `visible=true` only when
+- Wrap handler errors with `wrapError(err, status, visible)`; `visible=true` only when
   the message should reach the client.
 - JSON API bodies use Go field-name casing (`Pubkey`, `RegistrationLink`).
 - Prefer `net/netip` for IPs/prefixes; convert to `net.IPNet` only at the wgctrl boundary.
@@ -124,7 +130,7 @@ Import direction is strictly one-way: cmd → server → config → wireguard; n
 - `Commit()` has no transaction semantics between device-apply and INI-save (FIXME).
 - No login rate limiting (TODO in api.go).
 - Sessions in-memory only (lost on restart; single process by design).
-- `WrapHandler` serializes ALL requests under one mutex.
+- `wrapHandler` serializes ALL requests under one mutex.
 
 ## Collaboration note
 
