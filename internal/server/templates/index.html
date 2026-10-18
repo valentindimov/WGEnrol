@@ -43,14 +43,14 @@
     div.spacer {
         flex-grow: 1;
     }
-    #PeersListTable {
+    #PeersListTable, #PendingPeersListTable {
         background-color: #edf4f4;
         border: 2px outset #808080;
         border-collapse: separate;
         border-spacing: 2px;
         border-style: inset;
     }
-    #PeersListTable td,th {
+    #PeersListTable td,th, #PendingPeersListTable td,th {
         padding: 5px;
         text-align: center;
         vertical-align: center;
@@ -58,15 +58,23 @@
         overflow: hidden;
         white-space: nowrap;
     }
-    #PeersListTable tr:not(.hidden):nth-child(odd of .visible) {
+    #PeersListTable tr:not(.hidden):nth-child(odd of .visible),
+    #PendingPeersListTable tr:not(.hidden):nth-child(odd of .visible) {
         background-color: #D6EEEE;
     }
-    #PeersListTable tr.peersListEntry.visible:hover {
+    #PeersListTable tr.peersListEntry.visible:hover,
+    #PendingPeersListTable tr.peersListEntry.visible:hover {
         background-color: #ffecec;
     }
-    #PeersListTable td.editableField:hover {
-        background-color: #ffffff;
+    #PeersListTable td.editableField:hover,
+    #PeersListTable td.editableField,
+    #PendingPeersListTable td.editablePendingField,
+    #PendingPeersListTable td.editablePendingField:hover {
         cursor: pointer;
+    }
+    #PeersListTable td.editableField:hover,
+    #PendingPeersListTable td.editablePendingField:hover {
+        background-color: #ffffff;
     }
     #AddPeerDialogRegistrationLink {
         padding: 5px;
@@ -127,6 +135,27 @@
             </tr>
             {{- end }}
         </table>
+        <div style="align-items: center; padding: 15px 5px 5px 5px;">
+            <b>Pending invites</b>
+        </div>
+        <table id="PendingPeersListTable">
+            <tr>
+                <th>Peer Name</th>
+                <th>Peer Subnets</th>
+                <th>Token Hash</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+            {{- range .pendingPeers }}
+            <tr class="peersListEntry visible">
+                <td class="editablePendingField">{{ .Comment }}</td>
+                <td>{{ subnetListToString .AllowedIps }}</td>
+                <td style="color: #848588;">{{ .TokenHash }}</td>
+                <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
+                <td><button class="editPendingButton">Edit</button> <button class="deletePendingButton">Delete</button></td>
+            </tr>
+            {{- end }}
+        </table>
     </div>
 </div>
 <dialog id="EditFieldDialog">
@@ -137,6 +166,27 @@
         <div class="horizontal">
             <input type="text" id="EditFieldDialogInput" />
             <button id="EditFieldDialogSaveButton">Save</button>
+        </div>
+    </div>
+</dialog>
+<dialog id="EditPendingDialog">
+    <div class="vertical">
+        <div class="vertical">
+            <p>Edit the pending enrollment:</p>
+        </div>
+        <div class="vertical">
+            <div class="horizontal" style="padding: 2px">
+                <span>Name:</span>
+                <input type="text" id="EditPendingDialogNameInput" />
+            </div>
+            <div class="horizontal" style="padding: 2px">
+                <span>AllowedIPs (comma separated):</span>
+                <input type="text" id="EditPendingDialogIpsInput" />
+            </div>
+        </div>
+        <div class="horizontal">
+            <button id="EditPendingDialogSaveButton">Save</button>
+            <button id="EditPendingDialogCancelButton">Cancel</button>
         </div>
     </div>
 </dialog>
@@ -180,33 +230,31 @@
 <script>
     // Peer addition
     document.getElementById("AddNewPeerButton").onclick = async function() {
-        let preimage = new Uint8Array(32);
-        window.crypto.getRandomValues(preimage);
-        pubkey = new Uint8Array(await window.crypto.subtle.digest("SHA-256", preimage));
+        let token = new Uint8Array(32);
+        window.crypto.getRandomValues(token);
+        const tokenHash = new Uint8Array(await window.crypto.subtle.digest("SHA-256", token));
         registrationLink = window.location.href;
         if (!registrationLink.endsWith("/")) {
             registrationLink = `${registrationLink}/`;
         }
-        registrationLink = `${registrationLink}peer/${preimage.toBase64({"alphabet": "base64url", "omitPadding": true})}`;
+        registrationLink = `${registrationLink}peer/${token.toBase64({"alphabet": "base64url", "omitPadding": true})}`;
         document.getElementById("AddPeerDialogNameInput").value = "";
         document.getElementById("AddPeerDialogEmailInput").value = "";
         document.getElementById("AddPeerDialogRegistrationLink").href = registrationLink;
         document.getElementById("AddPeerDialogRegistrationLink").innerText = registrationLink;
         document.getElementById("AddPeerDialogNameInput").focus();
         document.getElementById("AddPeerDialogSaveButton").onclick = async function() {
-            const newPeerRequest = {
-                "Peer": {
-                    "Pubkey": pubkey.toBase64({"alphabet": "base64", "omitPadding": false}),
-                    "Comment": document.getElementById("AddPeerDialogNameInput").value
-                },
+            const newPendingRequest = {
+                "TokenHash": tokenHash.toBase64({"alphabet": "base64", "omitPadding": false}),
+                "Comment": document.getElementById("AddPeerDialogNameInput").value,
                 "RegistrationLink": registrationLink
             };
             if (document.getElementById("AddPeerDialogEmailInput").value != "") {
-                newPeerRequest["UserEmail"] = document.getElementById("AddPeerDialogEmailInput").value
+                newPendingRequest["UserEmail"] = document.getElementById("AddPeerDialogEmailInput").value
             }
             document.getElementById("AddPeerDialog").close();
             try {
-                let response = await fetch("/peer", {method: "POST", body: JSON.stringify(newPeerRequest)});
+                let response = await fetch("/pending", {method: "POST", body: JSON.stringify(newPendingRequest)});
                 if (!response.ok) {
                     let errorMessage = await response.text();
                     throw new Error(`${response.status} - ${errorMessage}`);
@@ -275,6 +323,69 @@
                         throw new Error(`${response.status} - ${errorMessage}`);
                     }
                     tableRow.remove();
+                } catch(err) {
+                    alert(`Operation failed: ${err}`);
+                } finally {
+                    window.location.reload();
+                }
+            }
+        }
+    }
+    // Pending enrollment editing
+    document.addEventListener("click", function(event) {
+        if (event.target.className == "editablePendingField" || event.target.className == "editPendingButton") {
+            const tableRow = event.target.closest("tr");
+            document.getElementById("EditPendingDialogNameInput").value = tableRow.children[0].innerText;
+            document.getElementById("EditPendingDialogIpsInput").value = tableRow.children[1].innerText;
+            document.getElementById("EditPendingDialogNameInput").focus();
+            document.getElementById("EditPendingDialogSaveButton").onclick = async function() {
+                const target = Uint8Array.fromBase64(
+                    tableRow.children[2].innerText,
+                    {"alphabet": "base64", "lastChunkHandling": "loose"}
+                ).toBase64({"alphabet": "base64url", "omitPadding": true});
+                const allowedIPs = document.getElementById("EditPendingDialogIpsInput").value
+                    .split(",").map(s => s.trim()).filter(s => s.length > 0);
+                const editedPendingRequest = {
+                    "Comment": document.getElementById("EditPendingDialogNameInput").value,
+                    "AllowedIPs": allowedIPs
+                };
+                document.getElementById("EditPendingDialog").close();
+                try {
+                    let response = await fetch(`/pending/${target}`, {method: "PUT", body: JSON.stringify(editedPendingRequest)});
+                    if (!response.ok) {
+                        let errorMessage = await response.text();
+                        throw new Error(`${response.status} - ${errorMessage}`);
+                    }
+                } catch(err) {
+                    alert(`Operation failed: ${err}`);
+                } finally {
+                    window.location.reload();
+                }
+            }
+            document.getElementById("EditPendingDialogCancelButton").onclick = function() {
+                document.getElementById("EditPendingDialog").close();
+            }
+            document.getElementById("EditPendingDialog").showModal();
+            event.stopPropagation();
+        }
+    });
+    // Pending enrollment deletion
+    const deletePendingButtons = document.getElementsByClassName("deletePendingButton");
+    for (let i = 0; i < deletePendingButtons.length; i++) {
+        const button = deletePendingButtons.item(i);
+        const tableRow = button.closest("tr");
+        button.onclick = async function () {
+            if (window.confirm(`Are you sure you want to delete the pending enrollment ${tableRow.children[0].innerText}?`)) {
+                const target = Uint8Array.fromBase64(
+                    tableRow.children[2].innerText,
+                    {"alphabet": "base64", "lastChunkHandling": "loose"}
+                ).toBase64({"alphabet": "base64url", "omitPadding": true});
+                try {
+                    let response = await fetch(`/pending/${target}`, { method: "DELETE" });
+                    if (!response.ok) {
+                        let errorMessage = await response.text();
+                        throw new Error(`${response.status} - ${errorMessage}`);
+                    }
                 } catch(err) {
                     alert(`Operation failed: ${err}`);
                 } finally {

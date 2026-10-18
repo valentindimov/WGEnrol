@@ -26,14 +26,19 @@ smtp:
   # password: "password123"
   # from: "user@example.com"
 
+# Peer storage configuration. The backend defaults to "sqlite"; use "postgres"
+# with a dsn instead of a file to store peers on a PostgreSQL server.
+storage:
+  backend: sqlite
+  # SQLite database file used to store peers and pending enrollments.
+  file: "testdata/test.db"
+  # dsn: "postgres://user:password@localhost:5432/wgenrol"
+
 # Wireguard interface settings
 wireguard:
-  # File used to store peer information.
-  # It's in an INI format compatible with wg-quick (and won't change anything apart from [Peer] sections).
-  # However, you can also use a fully separate file as well, e.g. because you don't use wg-quick to manage the interface.
-  confFile: "testdata/test.conf"
   # Name of the WireGuard interface (or the tunnel name on Windows) that WGEnrol will manage.
-  # It will drop and replace the interface's peer list with the peers saved in the confFile.
+  # It will drop and replace the interface's peer list with the peers saved in the database.
+  # Note: peers from an existing wg-quick .conf file can be brought over with the -import flag.
   ifname: "wgenrol-test"
 
 # When a user opens the enrolment page, their browser generates WireGuard keys and fetches some information from the server

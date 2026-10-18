@@ -9,26 +9,30 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"thebasstoon.com/wgenrol/internal/config"
 )
 
-// Concurrent authenticated requests each write ValidSessionTokens (sliding
-// expiry) inside AuthenticateRequest; wrapHandler's mutex must serialize that
-// against login/logout-style writers. Meaningful under -race, but a regression
-// that drops the lock also trips the runtime "concurrent map writes" fatal.
+// Concurrent authenticated requests slide session expiry (a store write per
+// request) inside authenticateRequest; wrapHandler's mutex must serialize
+// that against login/logout-style writers. Meaningful under -race: a
+// regression that drops the lock trips the single-connection store's
+// serialized expectations and the runtime's concurrent-map guards. Iteration
+// counts are lower than they used to be because every request now performs a
+// real database write.
 func TestWrapHandlerConcurrency(t *testing.T) {
 	tok := "TESTTOKEN000000000000000000"
-	ctx := &config.ServerContext{
-		Config:             &config.WgEnrolConfig{},
-		ValidSessionTokens: map[string]time.Time{tok: time.Now().Add(time.Hour)},
-	}
-	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+	ctx := newStoreCtx(t)
+	seedSession(t, ctx, tok, time.Now().Add(time.Hour))
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
-	writer := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
-		c.ValidSessionTokens["other"] = time.Now().Add(time.Hour)
-		delete(c.ValidSessionTokens, "other")
+	writer := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+		if err := c.Sessions.CreateSession("other", time.Now().Add(time.Minute)); err != nil {
+			t.Errorf("writer create: %v", err)
+			return nil, nil
+		}
+		if err := c.Sessions.DeleteSession("other"); err != nil {
+			t.Errorf("writer delete: %v", err)
+		}
 		return nil, nil
 	}, ctx, "text/plain", false, false, nil, false)
 
@@ -44,7 +48,7 @@ func TestWrapHandlerConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 1000; j++ {
+			for j := 0; j < 200; j++ {
 				rec := httptest.NewRecorder()
 				authed(rec, mkReq())
 				if rec.Code != http.StatusOK {
@@ -58,7 +62,7 @@ func TestWrapHandlerConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 1000; j++ {
+			for j := 0; j < 200; j++ {
 				writer(httptest.NewRecorder(), httptest.NewRequest("POST", "/x", nil))
 			}
 		}()
@@ -69,47 +73,62 @@ func TestWrapHandlerConcurrency(t *testing.T) {
 // Login must be reachable as wired (authenticated=false): no pre-existing
 // session should be required to authenticate.
 func TestLoginReachable(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	login := wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"password"}`))
 	req.RemoteAddr = "127.0.0.1:5555"
 	rec := httptest.NewRecorder()
 	login(rec, req)
-	if rec.Code != http.StatusOK || len(ctx.ValidSessionTokens) != 1 {
-		t.Fatalf("valid creds did not authenticate (status=%d, tokens=%d)", rec.Code, len(ctx.ValidSessionTokens))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid creds did not authenticate (status=%d)", rec.Code)
+	}
+	tok := sessionCookieToken(t, rec)
+	if _, ok, err := ctx.Sessions.SessionExpiry(tok); err != nil || !ok {
+		t.Fatalf("login must persist a session in the store: ok=%v err=%v", ok, err)
 	}
 }
 
 func TestUnknownUserRejected(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"nobody","Password":"x"}`))
-	_, herr := handlePostLogin(ctx, req, httptest.NewRecorder())
-	if herr == nil || len(ctx.ValidSessionTokens) != 0 {
-		t.Fatalf("unknown user not rejected (herr=%v, tokens=%d)", herr, len(ctx.ValidSessionTokens))
+	rec := httptest.NewRecorder()
+	_, herr := handlePostLogin(ctx, req, rec)
+	if herr == nil || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("unknown user must not receive a session cookie (herr=%v, cookies=%d)", herr, len(rec.Result().Cookies()))
 	}
 }
 
 func TestWrongPasswordRejected(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"wrong"}`))
-	_, herr := handlePostLogin(ctx, req, httptest.NewRecorder())
-	if herr == nil || len(ctx.ValidSessionTokens) != 0 {
-		t.Fatalf("wrong password accepted (herr=%v, tokens=%d)", herr, len(ctx.ValidSessionTokens))
+	rec := httptest.NewRecorder()
+	_, herr := handlePostLogin(ctx, req, rec)
+	if herr == nil || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("wrong password must not receive a session cookie (herr=%v, cookies=%d)", herr, len(rec.Result().Cookies()))
 	}
 }
 
 func TestCorrectLoginSucceeds(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"password"}`))
-	_, herr := handlePostLogin(ctx, req, httptest.NewRecorder())
-	if herr != nil || len(ctx.ValidSessionTokens) != 1 {
-		t.Fatalf("correct login failed (herr=%v, tokens=%d)", herr, len(ctx.ValidSessionTokens))
+	rec := httptest.NewRecorder()
+	_, herr := handlePostLogin(ctx, req, rec)
+	if herr != nil {
+		t.Fatalf("correct login failed (herr=%v)", herr)
+	}
+	tok := sessionCookieToken(t, rec)
+	expiry, ok, err := ctx.Sessions.SessionExpiry(tok)
+	if err != nil || !ok {
+		t.Fatalf("session not persisted: ok=%v err=%v", ok, err)
+	}
+	if !expiry.After(time.Now().Add(30 * time.Minute)) {
+		t.Fatalf("session expiry should be about one hour out, got %v", expiry)
 	}
 }
 
 // The admin ipFilter must gate /login (off-allowlist blocked, on-allowlist OK).
 func TestLoginIPFiltered(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	ctx.AdminIpFilter = prefixes("192.168.0.0/16")
 	login := wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
 
@@ -117,26 +136,29 @@ func TestLoginIPFiltered(t *testing.T) {
 	off.RemoteAddr = "9.9.9.9:5555"
 	recOff := httptest.NewRecorder()
 	login(recOff, off)
-	if recOff.Code != http.StatusUnauthorized || len(ctx.ValidSessionTokens) != 0 {
-		t.Fatalf("off-allowlist login not blocked (status=%d, tokens=%d)", recOff.Code, len(ctx.ValidSessionTokens))
+	if recOff.Code != http.StatusUnauthorized || len(recOff.Result().Cookies()) != 0 {
+		t.Fatalf("off-allowlist login not blocked (status=%d, cookies=%d)", recOff.Code, len(recOff.Result().Cookies()))
 	}
 
 	on := httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"password"}`))
 	on.RemoteAddr = "192.168.1.10:5555"
 	recOn := httptest.NewRecorder()
 	login(recOn, on)
-	if recOn.Code != http.StatusOK || len(ctx.ValidSessionTokens) != 1 {
-		t.Fatalf("on-allowlist login failed (status=%d, tokens=%d)", recOn.Code, len(ctx.ValidSessionTokens))
+	if recOn.Code != http.StatusOK {
+		t.Fatalf("on-allowlist login failed (status=%d)", recOn.Code)
+	}
+	if _, ok, _ := ctx.Sessions.SessionExpiry(sessionCookieToken(t, recOn)); !ok {
+		t.Fatal("on-allowlist login did not persist a session")
 	}
 }
 
 // An admin route must be blocked by the ipFilter even with a valid session.
 func TestAdminRouteIPFiltered(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	ctx.AdminIpFilter = prefixes("192.168.0.0/16")
 	tok := "TOKENVALUE000000000000000000"
-	ctx.ValidSessionTokens[tok] = time.Now().Add(time.Hour)
-	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+	seedSession(t, ctx, tok, time.Now().Add(time.Hour))
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
 	req := httptest.NewRequest("GET", "/", nil)
@@ -151,11 +173,11 @@ func TestAdminRouteIPFiltered(t *testing.T) {
 
 // A valid session on an allowlisted IP reaches the handler.
 func TestAdminRouteAllowedWithSession(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	tok := "TOKENVALUE000000000000000000"
-	ctx.ValidSessionTokens[tok] = time.Now().Add(time.Hour)
+	seedSession(t, ctx, tok, time.Now().Add(time.Hour))
 	reached := false
-	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		reached = true
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
@@ -170,8 +192,8 @@ func TestAdminRouteAllowedWithSession(t *testing.T) {
 
 // A request without a session cookie is redirected to /login.
 func TestNoSessionRedirects(t *testing.T) {
-	ctx := newLoginCtx()
-	authed := wrapHandler(func(c *config.ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+	ctx := newLoginCtx(t)
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
 		t.Fatal("handler should not run without a session")
 		return nil, nil
 	}, ctx, "text/plain", true, true, nil, false)
@@ -187,7 +209,7 @@ func TestNoSessionRedirects(t *testing.T) {
 // wrapHandler caps the request body (DoS guard); an oversized body must be
 // rejected rather than read in full.
 func TestBodySizeLimited(t *testing.T) {
-	ctx := newLoginCtx()
+	ctx := newLoginCtx(t)
 	login := wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false)
 	big := bytes.Repeat([]byte("a"), 2*1024*1024) // 2 MB > 1 MB cap
 	req := httptest.NewRequest("POST", "/login", bytes.NewReader(big))
@@ -197,7 +219,144 @@ func TestBodySizeLimited(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for oversized body, got %d", rec.Code)
 	}
-	if len(ctx.ValidSessionTokens) != 0 {
-		t.Fatal("oversized request must not authenticate")
+}
+
+// A session cookie whose value is not base64 yields a redirect, not a panic.
+func TestAuthenticateRequestMalformedCookieRedirects(t *testing.T) {
+	ctx := newLoginCtx(t)
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+		t.Fatal("handler must not run")
+		return nil, nil
+	}, ctx, "text/plain", true, true, nil, false)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "127.0.0.1:40001"
+	req.AddCookie(&http.Cookie{Name: "session", Value: "!!!garbage!!!"})
+	rec := httptest.NewRecorder()
+	authed(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login" {
+		t.Fatalf("expected redirect to /login, got %d", rec.Code)
 	}
+}
+
+// An expired session is rejected with a redirect even though it exists in
+// the store.
+func TestAuthenticateRequestExpiredTokenRedirects(t *testing.T) {
+	ctx := newLoginCtx(t)
+	seedSession(t, ctx, "expired", time.Now().Add(-time.Minute))
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+		t.Fatal("handler must not run")
+		return nil, nil
+	}, ctx, "text/plain", true, true, nil, false)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "127.0.0.1:40002"
+	req.AddCookie(&http.Cookie{Name: "session", Value: base64.URLEncoding.EncodeToString([]byte("expired"))})
+	rec := httptest.NewRecorder()
+	authed(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected redirect for an expired token, got %d", rec.Code)
+	}
+}
+
+// A valid session's sliding expiry is pushed forward on every authenticated
+// request; the store must reflect the slide.
+func TestAuthenticateRequestExtendsValidity(t *testing.T) {
+	tok := "TOKEXT000000000000000000"
+	ctx := newLoginCtx(t)
+	seedSession(t, ctx, tok, time.Now().Add(time.Minute))
+	authed := wrapHandler(func(c *ServerContext, r *http.Request, w http.ResponseWriter) ([]byte, *handlerError) {
+		return nil, nil
+	}, ctx, "text/plain", true, true, nil, false)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "127.0.0.1:40003"
+	req.AddCookie(&http.Cookie{Name: "session", Value: base64.URLEncoding.EncodeToString([]byte(tok))})
+	rec := httptest.NewRecorder()
+	authed(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	expiry, ok, err := ctx.Sessions.SessionExpiry(tok)
+	if err != nil || !ok {
+		t.Fatalf("session expiry unreadable: ok=%v err=%v", ok, err)
+	}
+	if !expiry.After(time.Now().Add(30 * time.Minute)) {
+		t.Fatalf("validity was not slid to a one-hour expiry, got %v", expiry)
+	}
+}
+
+// Login prunes expired sessions (housekeeping hook); stale ones disappear.
+func TestHandlePostLoginPrunesExpiredTokens(t *testing.T) {
+	ctx := newLoginCtx(t)
+	seedSession(t, ctx, "stale", time.Now().Add(-time.Hour))
+	_, herr := handlePostLogin(ctx, httptest.NewRequest("POST", "/login", strings.NewReader(`{"Username":"admin","Password":"password"}`)), httptest.NewRecorder())
+	if herr != nil {
+		t.Fatalf("login failed: %v", herr)
+	}
+	if _, ok, err := ctx.Sessions.SessionExpiry("stale"); err != nil || ok {
+		t.Fatalf("expired session must be pruned at login: ok=%v err=%v", ok, err)
+	}
+	// Second prune is a no-op: nothing else expired.
+	if removed, err := ctx.Sessions.DeleteExpiredSessions(time.Now()); err != nil || removed != 0 {
+		t.Fatalf("expected an empty second prune, got removed=%d err=%v", removed, err)
+	}
+}
+
+// A malformed login body yields a visible 400 before any credential work.
+func TestHandlePostLoginMalformedJSON(t *testing.T) {
+	ctx := newLoginCtx(t)
+	_, herr := handlePostLogin(ctx, httptest.NewRequest("POST", "/login", strings.NewReader("{bad")), httptest.NewRecorder())
+	if herr == nil || herr.status != 400 || !strings.Contains(*herr.message, "Malformed") {
+		t.Fatalf("expected 400 'Malformed request', got %v", herr)
+	}
+}
+
+func TestGetSessionToken(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: base64.URLEncoding.EncodeToString([]byte("tok123"))})
+	token, err := getSessionToken(req)
+	if err != nil || token == nil || *token != "tok123" {
+		t.Fatalf("valid session cookie rejected: %v %v", token, err)
+	}
+
+	req = httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: "!!not-base64!!"})
+	if _, err := getSessionToken(req); err == nil {
+		t.Fatal("expected an error for a non-base64 cookie")
+	}
+
+	req = httptest.NewRequest("GET", "/", nil)
+	if _, err := getSessionToken(req); err == nil {
+		t.Fatal("expected an error for a missing session cookie")
+	}
+}
+
+// An unparseable RemoteAddr must not crash the IP filter; it yields a 500.
+func TestApplyIpFilterBadRemoteAddr(t *testing.T) {
+	ctx := newLoginCtx(t)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "not-an-addrport"
+	rec := httptest.NewRecorder()
+	if err := applyIpFilter(req, rec, ctx); err == nil {
+		t.Fatal("expected an error for a bad RemoteAddr")
+	}
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "Internal Server Error") {
+		t.Fatalf("expected 500 Internal Server Error, got %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+// sessionCookieToken extracts and decodes the session token from a handler's
+// Set-Cookie response.
+func sessionCookieToken(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	cookies := rec.Result().Cookies()
+	for _, c := range cookies {
+		if c.Name == "session" && c.Value != "" {
+			decoded, err := base64.URLEncoding.DecodeString(c.Value)
+			if err != nil {
+				t.Fatalf("cannot decode session cookie: %v", err)
+			}
+			return string(decoded)
+		}
+	}
+	t.Fatalf("no session cookie set (cookies: %v)", cookies)
+	return ""
 }

@@ -152,7 +152,7 @@ PersistentKeepalive = 25
             "NewPSK": psk
         };
         try {
-            let response = await fetch("/peer/{{ .pubkeyPreimage }}", {method: "PUT", body: JSON.stringify(enrolPeerRequest)});
+            let response = await fetch("/peer/{{ .token }}", {method: "PUT", body: JSON.stringify(enrolPeerRequest)});
             if (!response.ok) {
                 let errorMessage = await response.text();
                 throw new Error(`${response.status} - ${errorMessage}`);
