@@ -6,31 +6,25 @@ Peer private keys are generated in the browser at the time of enrolment and neve
 WGEnrol's dependencies are intentionally minimal:
 - The app is built based on simple HTML templating and sticks to the Go standard library where possible;
 - In the backend, additional libraries are used for cryptography, YAML and INI format support, and Wireguard interface control;
-- In the frontend, the [qrcode.js](https://github.com/davidshimjs/qrcodejs) library is included to generate QR codes for mobile Wireguard clients. See the [enrolment.html](./enrolment.html) template file.
+- In the frontend, the [qrcode.js](https://github.com/davidshimjs/qrcodejs) library is included to generate QR codes for mobile Wireguard clients. See the [enrolment.html](./internal/server/templates/enrolment.html) template file.
 
 A reasonably modern browser (one that supports the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API)) is required to use the app.
 
 
 ## How to Build
-You will need a reasonably recent Go version (tested with 1.24). Depending on your host system, run:
+You will need a reasonably recent Go version (tested with 1.24). The project is pure Go, so
 
 ```bash
-./build.sh
+go build -o build/wgenrol ./cmd/wgenrol
 ```
-on Linux, or
 
-```powershell
-.\build.cmd
-```
-on Windows.
+is sufficient to build it.
 
-The scripts produce builds for Linux and Windows (both x86 and ARM) in the `build/` directory.
-
-You can also run `test.sh` or `test.cmd` respectively to run unit tests for some components.
+You can also run `build.sh` and `test.sh` (on Linux) to build and run unit tests for some components.
 
 
 ## How to Run
-The application uses a YAML-formatted config file. Check [testfiles/test_config.yaml](./testfiles/test_config.yaml) for an example.
+The application uses a YAML-formatted config file. Check [testdata/test_config.yaml](./testdata/test_config.yaml) for an example.
 Create this file and store it somewhere convenient, e.g. in `/etc/`.
 
 The application manages the peer list of the Wireguard interface referenced by `wireguard.ifname` in the config file.

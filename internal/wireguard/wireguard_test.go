@@ -1,4 +1,4 @@
-package main
+package wireguard
 
 import (
 	"encoding/base64"
@@ -13,7 +13,7 @@ import (
 
 func TestLoadValidPeer(t *testing.T) {
 	p := writeConf(t, "# Alice\n[Peer]\nPublicKey = "+validKey()+"\nAllowedIPs = 10.64.0.2/32\n")
-	conf, err := loadWgConf(p)
+	conf, err := LoadWgConf(p, "wgenrol-test")
 	if err != nil {
 		t.Fatalf("valid peer rejected: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestLoadValidPeer(t *testing.T) {
 
 func TestLoadRejectsInvalidKey(t *testing.T) {
 	p := writeConf(t, "# bad\n[Peer]\nPublicKey = THIS-IS-NOT-A-VALID-KEY\nAllowedIPs = 10.64.0.2/32\n")
-	_, err := loadWgConf(p)
+	_, err := LoadWgConf(p, "wgenrol-test")
 	if err == nil || !strings.Contains(err.Error(), "Invalid peer") {
 		t.Fatalf("expected 'Invalid peer' error, got: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestLoadRejectsInvalidKey(t *testing.T) {
 
 func TestLoadRejectsMissingAllowedIPs(t *testing.T) {
 	p := writeConf(t, "# no allowed ips\n[Peer]\nPublicKey = "+validKey()+"\n")
-	_, err := loadWgConf(p)
+	_, err := LoadWgConf(p, "wgenrol-test")
 	if err == nil || !strings.Contains(err.Error(), "AllowedIPs cannot be empty") {
 		t.Fatalf("expected clean AllowedIPs error, got: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestLoadRejectsMissingAllowedIPs(t *testing.T) {
 
 func TestLoadToleratesTrailingComma(t *testing.T) {
 	p := writeConf(t, "# Alice\n[Peer]\nPublicKey = "+validKey()+"\nAllowedIPs = 10.64.0.2/32, 10.64.1.2/32,\n")
-	conf, err := loadWgConf(p)
+	conf, err := LoadWgConf(p, "wgenrol-test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestLoadToleratesTrailingComma(t *testing.T) {
 // supporting in-section names.
 func TestImportInSectionCommentNotRead(t *testing.T) {
 	p := writeConf(t, "[Peer]\n# Alice\nPublicKey = "+validKey()+"\nAllowedIPs = 10.64.0.2/32\n")
-	conf, err := loadWgConf(p)
+	conf, err := LoadWgConf(p, "wgenrol-test")
 	if err != nil {
 		t.Fatal(err)
 	}

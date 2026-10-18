@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/base64"
@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/netip"
 	"time"
+
+	"thebasstoon.com/wgenrol/internal/config"
 )
 
 func GetSessionToken(request *http.Request) (*string, error) {
@@ -21,7 +23,7 @@ func GetSessionToken(request *http.Request) (*string, error) {
 	return &token, nil
 }
 
-func ApplyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
+func ApplyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
 	// Check IP filter
 	hostPort, err := netip.ParseAddrPort(request.RemoteAddr)
 	if err != nil {
@@ -44,7 +46,7 @@ func ApplyIpFilter(request *http.Request, responseWriter http.ResponseWriter, ct
 	return nil
 }
 
-func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *ServerContext) error {
+func AuthenticateRequest(request *http.Request, responseWriter http.ResponseWriter, ctx *config.ServerContext) error {
 	// Check session cookie
 	token, err := GetSessionToken(request)
 	if err != nil {

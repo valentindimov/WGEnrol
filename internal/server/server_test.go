@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto/tls"
@@ -7,11 +7,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"thebasstoon.com/wgenrol/internal/config"
 )
 
 func TestGetCertificateMatching(t *testing.T) {
 	ctx, _, _ := tempCertPair(t)
-	if _, err := getCertificate(nil, ctx, &CertCache{}); err != nil {
+	if _, err := GetCertificate(nil, ctx, &CertCache{}); err != nil {
 		t.Fatalf("matching pair failed to load: %v", err)
 	}
 }
@@ -21,13 +23,13 @@ func TestGetCertificateMismatchNoCache(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")
 	keyPath := filepath.Join(dir, "key.pem")
-	cb, _ := os.ReadFile(filepath.Join("testfiles", "test_cert.pem"))
+	cb, _ := os.ReadFile(filepath.Join("..", "..", "testdata", "test_cert.pem"))
 	os.WriteFile(certPath, cb, 0o644)
 	os.WriteFile(keyPath, cb, 0o644) // cert bytes where a key belongs
-	ctx := &ServerContext{Config: &WgEnrolConfig{}}
+	ctx := &config.ServerContext{Config: &config.WgEnrolConfig{}}
 	ctx.Config.Server.Tls.CertFile = &certPath
 	ctx.Config.Server.Tls.KeyFile = &keyPath
-	if _, err := getCertificate(nil, ctx, &CertCache{}); err == nil {
+	if _, err := GetCertificate(nil, ctx, &CertCache{}); err == nil {
 		t.Fatal("expected error for mismatched pair with empty cache")
 	}
 }
@@ -35,11 +37,11 @@ func TestGetCertificateMismatchNoCache(t *testing.T) {
 func TestCertCacheHitAndReload(t *testing.T) {
 	ctx, certPath, _ := tempCertPair(t)
 	cache := &CertCache{}
-	c1, err := getCertificate(nil, ctx, cache)
+	c1, err := GetCertificate(nil, ctx, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c2, _ := getCertificate(nil, ctx, cache)
+	c2, _ := GetCertificate(nil, ctx, cache)
 	if c1 != c2 {
 		t.Fatal("expected cache hit (same *tls.Certificate)")
 	}
@@ -47,13 +49,13 @@ func TestCertCacheHitAndReload(t *testing.T) {
 	if err := os.Chtimes(certPath, future, future); err != nil {
 		t.Fatal(err)
 	}
-	c3, _ := getCertificate(nil, ctx, cache)
+	c3, _ := GetCertificate(nil, ctx, cache)
 	if c3 == c1 {
 		t.Fatal("expected reload after mtime change")
 	}
 }
 
-// During a renewal window (cert/key temporarily mismatched) getCertificate
+// During a renewal window (cert/key temporarily mismatched) GetCertificate
 // keeps serving the last-good cert, then reloads once the pair is consistent.
 func TestCertCacheFallbackAndSelfHeal(t *testing.T) {
 	ctx, _, keyPath := tempCertPair(t)
@@ -61,7 +63,7 @@ func TestCertCacheFallbackAndSelfHeal(t *testing.T) {
 	keyBytes, _ := os.ReadFile(keyPath)
 	cache := &CertCache{}
 
-	c1, err := getCertificate(nil, ctx, cache)
+	c1, err := GetCertificate(nil, ctx, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,13 +72,13 @@ func TestCertCacheFallbackAndSelfHeal(t *testing.T) {
 	os.WriteFile(keyPath, certBytes, 0o644)
 	b := time.Now().Add(2 * time.Second)
 	os.Chtimes(keyPath, b, b)
-	c2, err := getCertificate(nil, ctx, cache)
+	c2, err := GetCertificate(nil, ctx, cache)
 	if err != nil || c2 != c1 {
 		t.Fatalf("expected last-good fallback (err=%v, same=%v)", err, c2 == c1)
 	}
 
 	// A repeat call must still fall back (the failure must not be cached).
-	c2b, err := getCertificate(nil, ctx, cache)
+	c2b, err := GetCertificate(nil, ctx, cache)
 	if err != nil || c2b != c1 {
 		t.Fatalf("expected continued fallback (err=%v, same=%v)", err, c2b == c1)
 	}
@@ -85,7 +87,7 @@ func TestCertCacheFallbackAndSelfHeal(t *testing.T) {
 	os.WriteFile(keyPath, keyBytes, 0o644)
 	b2 := time.Now().Add(4 * time.Second)
 	os.Chtimes(keyPath, b2, b2)
-	c3, err := getCertificate(nil, ctx, cache)
+	c3, err := GetCertificate(nil, ctx, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +105,8 @@ func TestCertCacheConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 300; j++ {
-				if _, err := getCertificate(nil, ctx, cache); err != nil {
-					t.Errorf("getCertificate: %v", err)
+				if _, err := GetCertificate(nil, ctx, cache); err != nil {
+					t.Errorf("GetCertificate: %v", err)
 					return
 				}
 			}

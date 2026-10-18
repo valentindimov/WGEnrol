@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"testing"
+
+	"thebasstoon.com/wgenrol/internal/config"
 )
 
 // computeClientConfigAllowedIPs builds the client's Address from the
@@ -52,7 +54,7 @@ func TestGetFirstIPInNetwork(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := getFirstIPInNetwork(netip.MustParsePrefix(c.in)); got.String() != c.want {
-			t.Errorf("getFirstIPInNetwork(%s) = %s, want %s", c.in, got, c.want)
+			t.Errorf("getFirstIPInNetwork(%s) = %s, want %s", c.in, got.String(), c.want)
 		}
 	}
 }
@@ -68,7 +70,7 @@ func TestCreatePeerRejectsEmailInjection(t *testing.T) {
 		"not-an-email",
 	}
 	for _, email := range payloads {
-		ctx := &ServerContext{Config: &WgEnrolConfig{}}
+		ctx := &config.ServerContext{Config: &config.WgEnrolConfig{}}
 		body, _ := json.Marshal(map[string]any{
 			"Peer":             map[string]any{"Pubkey": validKey(), "Comment": "x"},
 			"UserEmail":        email,

@@ -1,13 +1,15 @@
-package main
+package config
 
 import (
 	"fmt"
 	"net/netip"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"thebasstoon.com/wgenrol/internal/wireguard"
 )
 
 type WgEnrolConfig struct {
@@ -54,6 +56,15 @@ func validateIPNetList(input []string) ([]netip.Prefix, error) {
 		}
 	}
 	return nets, nil
+}
+
+type ServerContext struct {
+	StateMutex sync.Mutex
+	ConfFile   *wireguard.WgConf
+	Config     *WgEnrolConfig
+
+	AdminIpFilter      []netip.Prefix
+	ValidSessionTokens map[string]time.Time // Maps the token to the expiry time
 }
 
 func ParseConfigFile(path string) (*ServerContext, error) {
@@ -109,7 +120,7 @@ func ParseConfigFile(path string) (*ServerContext, error) {
 		return nil, fmt.Errorf("server.tls.certFile and server.tls.keyFile are required when TLS is enabled")
 	}
 	// Done checking, construct server context and return
-	confFile, err := loadWgConf(*result.Wireguard.ConfFile)
+	confFile, err := wireguard.LoadWgConf(*result.Wireguard.ConfFile, *result.Wireguard.Ifname)
 	if confFile == nil || err != nil {
 		return nil, err
 	}

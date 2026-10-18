@@ -5,8 +5,8 @@ server:
   tls:
     enabled: false
     # The full certificate chain is required; the cert and key are reloaded dynamically if they change e.g. due to renewal.
-    # certFile: "testfiles/test_cert.pem"
-    # keyFile: "testfiles/test_key.pem"
+    # certFile: "testdata/test_cert.pem"
+    # keyFile: "testdata/test_key.pem"
 
 # Settings for the administration interface (does not affect the enrolment page)
 admin:
@@ -31,7 +31,7 @@ wireguard:
   # File used to store peer information.
   # It's in an INI format compatible with wg-quick (and won't change anything apart from [Peer] sections).
   # However, you can also use a fully separate file as well, e.g. because you don't use wg-quick to manage the interface.
-  confFile: "testfiles/test.conf"
+  confFile: "testdata/test.conf"
   # Name of the WireGuard interface (or the tunnel name on Windows) that WGEnrol will manage.
   # It will drop and replace the interface's peer list with the peers saved in the confFile.
   ifname: "wgenrol-test"

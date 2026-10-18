@@ -24,7 +24,7 @@ Guidance for AI coding agents. Living document — update as the code is refacto
 
 ## Project overview
 
-WGEnrol is a single-package Go web application for enrolling and managing peers
+WGEnrol is a Go web application for enrolling and managing peers
 in a WireGuard network. Admins manage peers via a web UI; new peers enrol via
 invite links, and private keys are generated in the browser (Web Crypto) and are
 NEVER sent to the backend. The app only manages the peer list of an existing
@@ -33,35 +33,40 @@ on Linux and Windows. Build targets: linux/windows × amd64/arm64 (see build.sh)
 
 ## Architecture (current state)
 
-Flat layout, everything in `package main`:
+Three internal packages plus a thin entry point:
 
-- `main.go` — entry point: `-config` flag → `ParseConfigFile` → `ApplyDeviceConfig` → HTTP(S) server.
-- `config.go` — YAML config (`WgEnrolConfig`) and validation → builds `ServerContext`.
-  Pointer fields (`*string`, `*int`) mean "required": nil ⇒ missing. Validate in `ParseConfigFile`.
-- `server.go` — HTML templates via `go:embed`, compiled at init. `wrapHandler` is the
-  central middleware; it holds `ctx.stateMutex` for the whole request, sets security
-  headers, applies IP filter + session auth, masks errors on unauthenticated routes,
-  caps request bodies at 1 MB, and logs with preimage path masking. Routes use Go
-  method+wildcard patterns (`GET /peer/{pubkeyPreimage}`). TLS certs hot-reload by mtime
-  (`CertCache`: falls back to last-known-good cert during renewal windows).
-- `auth.go` — session cookie tokens (`crypto/rand.Text()`, in-memory map, sliding 1 h
-  expiry) and admin IP allowlist. Auth failures redirect to /login.
-- `api.go` — handlers: admin UI (GET /), peer create/edit/delete, login/logout,
-  enrollment page + enrollment, SMTP invite email (async goroutine — must stay lock-free),
-  client-config AllowedIPs computation. Handler signature everywhere:
-  `func(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError)`.
-- `wireguard.go` — peer DB as wg-quick-compatible INI (`WgConf`), atomic save
-  (temp file + fsync + rename), wgctrl device apply (`Commit` = save + apply), free-IP
-  allocation (`FindSuitableAllowedIPs`), device introspection (`GetDeviceNets`,
-  `GetDevicePubkey`).
-- `*.html` — server templates; inline JS does key generation, enrolment requests, and
-  QR codes (vendored qrcode.js in enrolment.html).
+- `cmd/wgenrol/main.go` — entry point: `-config` flag → `config.ParseConfigFile` →
+  `ConfFile.ApplyDeviceConfig` → `server.ListenAndServe`.
+- `internal/config` — YAML config (`WgEnrolConfig`), validation, and `ParseConfigFile`.
+  Pointer fields (`*string`, `*int`) mean "required": nil ⇒ missing. `ServerContext` also
+  lives here: it joins the parsed config, the peer store (`ConfFile *wireguard.WgConf`),
+  the admin IP filter, and the session-token map; `StateMutex` is the global request lock.
+- `internal/wireguard` — peer DB as wg-quick-compatible INI (`WgConf`, which carries the
+  interface name internally), atomic save (temp file + fsync + rename), device apply
+  (`Commit` = apply to device + save), free-IP allocation (`FindSuitableAllowedIPs`),
+  device introspection (`GetDeviceNets`, `GetDevicePubkey`), key decoding
+  (`DecodeWireguardKey`). Entry point: `LoadWgConf(path, ifname)`.
+- `internal/server` — HTTP layer. `server.go`: templates via `go:embed templates/*.html`,
+  compiled at init; `WrapHandler` is the central middleware — it holds `ctx.StateMutex`
+  for the whole request, sets security headers, applies IP filter + session auth, masks
+  errors on unauthenticated routes, caps request bodies at 1 MB, and logs with preimage
+  path masking. Routes use Go method+wildcard patterns (`GET /peer/{pubkeyPreimage}`).
+  `GetCertificate` hot-reloads TLS certs by mtime (`CertCache`: falls back to
+  last-known-good cert during renewal windows). `auth.go`: session cookie tokens
+  (`crypto/rand.Text()`, in-memory map, sliding 1 h expiry) and admin IP allowlist;
+  auth failures redirect to /login. `api.go`: handlers for the admin UI (GET /), peer
+  create/edit/delete, login/logout, enrollment page + enrollment, SMTP invite email
+  (async goroutine — must stay lock-free), and client-config AllowedIPs computation.
+- `templates/*.html` (under `internal/server`) — server templates; inline JS does key
+  generation, enrolment requests, and QR codes (vendored qrcode.js in enrolment.html).
+
+Import direction is strictly one-way: cmd → server → config → wireguard; no cycles.
 
 ### Security model — do not weaken
 
 - Enrollment: pending peers store base64(SHA-256(preimage)) as their pubkey; the
   preimage link is the capability to register a real pubkey (PUT /peer/{preimage}).
-- Handlers mutate state only under `ctx.stateMutex` (held by `wrapHandler`).
+- Handlers mutate state only under `ctx.StateMutex` (held by `WrapHandler`).
 - Unauthenticated endpoints get masked errors (`HandlerError.visible` + `maskErrors`).
 - Login: bcrypt compare against a dummy hash for unknown users (timing defense);
   no rate limiting yet (TODO).
@@ -69,7 +74,7 @@ Flat layout, everything in `package main`:
 ## Toolchain & commands
 
 - Go per `go.mod` (currently 1.26; newer stdlib APIs like `rand.Text`, `strings.SplitSeq` are fine). README's "tested with 1.24" note is stale.
-- Build: `./build.sh` (Linux) or `.\build.cmd` (Windows) → outputs to `build/` (gitignored, never commit).
+- Build: `./build.sh` → cross-compiles linux/windows × amd64/arm64 into `build/` (gitignored, never commit).
 - Verification: `./test.sh` — gofmt check, `go vet ./...`, `staticcheck ./...` (optional, config in `staticcheck.conf`), `go test -race ./...` (race detector needs a C compiler).
 - ALWAYS run `./test.sh` (or `gofmt -w . && go vet ./... && go test ./...`) after changes.
 
@@ -78,6 +83,11 @@ Flat layout, everything in `package main`:
 - Standard library first. Current deps: golang.org/x/crypto (bcrypt),
   golang.zx2c4.com/wireguard/wgctrl, gopkg.in/ini.v1, gopkg.in/yaml.v3.
   No frameworks; no new dependencies without explicit discussion.
+- Packages: `cmd/wgenrol` + `internal/{config,wireguard,server}`, imported by full
+  module path (`thebasstoon.com/wgenrol/internal/…`). Keep the import direction
+  strictly one-way (cmd → server → config → wireguard) — no cycles.
+- Handler signature everywhere:
+  `func(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError)`.
 - Error strings are full sentences (capitalized, often with a period): ST1005 is
   intentionally disabled in staticcheck.conf — do not re-enable or rewrite them.
 - Wrap handler errors with `WrapError(err, status, visible)`; `visible=true` only when
@@ -87,16 +97,22 @@ Flat layout, everything in `package main`:
 - go:embed for templates; route patterns on DefaultServeMux.
 - Comments are sparse and functional: security reasoning, gotchas, intentional
   limitations — never narration. Keep that discipline.
-- LF endings everywhere (.gitattributes); CRLF only for .cmd/.bat.
+- LF endings everywhere (.gitattributes). Windows batch scripts were removed
+  (Linux-only CI); if one is ever re-added it must keep CRLF (.gitattributes
+  still carries the rule).
 
 ## Testing approach
 
-- Plain `go test` in the same package; `*_test.go` alongside sources.
-- Reuse helpers in `helpers_test.go` (`writeConf`, `validKey`, `prefixes`, `newLoginCtx`,
-  `tempCertPair`, `genSelfSigned`) — extend them rather than duplicating.
+- Tests live in each package: `internal/{server,wireguard}`, plain `go test` with
+  `*_test.go` alongside sources.
+- Per-package `helpers_test.go`: `internal/wireguard` has `writeConf`/`validKey`,
+  `internal/server` has `newLoginCtx`/`tempCertPair`/`genSelfSigned`;
+  `validKey` + `prefixes` are deliberately duplicated between the two (no shared
+  test-only package) — extend rather than duplicating further.
 - Table-driven tests for pure functions; httptest for handlers/middleware.
 - Tests document deliberate limitations (e.g. `TestImportInSectionCommentNotRead`) — keep that.
-- `testfiles/` holds test config, certs, sample conf; admin creds admin/"password" (precomputed bcrypt).
+- Root `testdata/` holds test config, certs, sample conf (server tests read it via
+  `../../testdata/…`); admin creds admin/"password" (precomputed bcrypt).
 - Standing rule: run the test suite for your changes; only write/expand/adapt
   tests when the user explicitly asks. When instructed to work on tests, follow
   the practices above; when fixing bugs, write the failing test first.
@@ -108,8 +124,7 @@ Flat layout, everything in `package main`:
 - `Commit()` has no transaction semantics between device-apply and INI-save (FIXME).
 - No login rate limiting (TODO in api.go).
 - Sessions in-memory only (lost on restart; single process by design).
-- `wrapHandler` serializes ALL requests under one mutex.
-- Module path is `thebasstoon.com/wgpeermgr` (historical name mismatch — cosmetic).
+- `WrapHandler` serializes ALL requests under one mutex.
 
 ## Collaboration note
 

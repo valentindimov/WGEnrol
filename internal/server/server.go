@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto/tls"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"thebasstoon.com/wgenrol/internal/config"
 )
 
 func compileTemplateOrPanic(name string, source string) *template.Template {
@@ -30,26 +32,17 @@ func compileTemplateOrPanic(name string, source string) *template.Template {
 	return result
 }
 
-//go:embed index.html
+//go:embed templates/index.html
 var indexHtmlTemplateString string
 var indexHtmlTpl = compileTemplateOrPanic("index.html", indexHtmlTemplateString)
 
-//go:embed enrolment.html
+//go:embed templates/enrolment.html
 var enrolmentHtmlTemplateString string
 var enrolmentHtmlTpl = compileTemplateOrPanic("enrolment.html", enrolmentHtmlTemplateString)
 
-//go:embed login.html
+//go:embed templates/login.html
 var loginHtmlTemplateString string
 var loginHtmlTpl = compileTemplateOrPanic("login.html", loginHtmlTemplateString)
-
-type ServerContext struct {
-	stateMutex sync.Mutex
-	ConfFile   *WgConf
-	Config     *WgEnrolConfig
-
-	AdminIpFilter      []netip.Prefix
-	ValidSessionTokens map[string]time.Time // Maps the token to the expiry time
-}
 
 type HandlerError struct {
 	status  int
@@ -66,9 +59,9 @@ func WrapError(err error, status int, visible bool) *HandlerError {
 	return &HandlerError{status: status, visible: visible, message: &errMsg}
 }
 
-func wrapHandler(
-	handler func(ctx *ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError),
-	ctx *ServerContext,
+func WrapHandler(
+	handler func(ctx *config.ServerContext, r *http.Request, resp http.ResponseWriter) ([]byte, *HandlerError),
+	ctx *config.ServerContext,
 	contentType string,
 	authenticated bool,
 	applyIpFilter bool,
@@ -76,8 +69,8 @@ func wrapHandler(
 	maskErrors bool,
 ) http.HandlerFunc {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
-		ctx.stateMutex.Lock()
-		defer ctx.stateMutex.Unlock()
+		ctx.StateMutex.Lock()
+		defer ctx.StateMutex.Unlock()
 		// Set security headers
 		responseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 		if ctx.Config.Server.Tls.Enabled {
@@ -131,7 +124,7 @@ type CertCache struct {
 	certMod, keyMod *time.Time
 }
 
-func getCertificate(_ *tls.ClientHelloInfo, ctx *ServerContext, cache *CertCache) (*tls.Certificate, error) {
+func GetCertificate(_ *tls.ClientHelloInfo, ctx *config.ServerContext, cache *CertCache) (*tls.Certificate, error) {
 	if cache == nil {
 		log.Fatal("CertCache is missing but TLS is enabled.") // This should never happen, but just in case..
 	}
@@ -171,20 +164,20 @@ func getCertificate(_ *tls.ClientHelloInfo, ctx *ServerContext, cache *CertCache
 	return cache.cert, nil
 }
 
-func listenAndServe(ctx *ServerContext) {
+func ListenAndServe(ctx *config.ServerContext) {
 	// Login/logout
-	http.HandleFunc("GET /login", wrapHandler(handleGetLogin, ctx, "text/html", false, true, nil, false))
-	http.HandleFunc("POST /login", wrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false))
-	http.HandleFunc("POST /logout", wrapHandler(handlePostLogout, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("GET /login", WrapHandler(handleGetLogin, ctx, "text/html", false, true, nil, false))
+	http.HandleFunc("POST /login", WrapHandler(handlePostLogin, ctx, "text/plain", false, true, nil, false))
+	http.HandleFunc("POST /logout", WrapHandler(handlePostLogout, ctx, "text/plain", true, true, nil, false))
 	// Admin panel functions
-	http.HandleFunc("GET /", wrapHandler(handleGetRoot, ctx, "text/html", true, true, nil, false))
-	http.HandleFunc("PUT /peer", wrapHandler(handleEditPeer, ctx, "text/plain", true, true, nil, false))
-	http.HandleFunc("POST /peer", wrapHandler(handleCreatePeer, ctx, "text/plain", true, true, nil, false))
-	http.HandleFunc("DELETE /peer/{pubkey}", wrapHandler(handleDeletePeer, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("GET /", WrapHandler(handleGetRoot, ctx, "text/html", true, true, nil, false))
+	http.HandleFunc("PUT /peer", WrapHandler(handleEditPeer, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("POST /peer", WrapHandler(handleCreatePeer, ctx, "text/plain", true, true, nil, false))
+	http.HandleFunc("DELETE /peer/{pubkey}", WrapHandler(handleDeletePeer, ctx, "text/plain", true, true, nil, false))
 	// Peer enrolment
 	pubkeyPreimageMask := "/peer/{pubkeyPreimage}"
-	http.HandleFunc("GET /peer/{pubkeyPreimage}", wrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html", false, false, &pubkeyPreimageMask, true))
-	http.HandleFunc("PUT /peer/{pubkeyPreimage}", wrapHandler(handleEnrolPeer, ctx, "text/plain", false, false, &pubkeyPreimageMask, true))
+	http.HandleFunc("GET /peer/{pubkeyPreimage}", WrapHandler(handleGetPeerEnrolmentPage, ctx, "text/html", false, false, &pubkeyPreimageMask, true))
+	http.HandleFunc("PUT /peer/{pubkeyPreimage}", WrapHandler(handleEnrolPeer, ctx, "text/plain", false, false, &pubkeyPreimageMask, true))
 
 	// Define the server (still uses the DefaultServeMux handler which http.HandleFunc adds to)
 	var certCache CertCache
@@ -192,7 +185,7 @@ func listenAndServe(ctx *ServerContext) {
 		Addr: *ctx.Config.Server.ListenOn,
 		TLSConfig: &tls.Config{
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				return getCertificate(info, ctx, &certCache)
+				return GetCertificate(info, ctx, &certCache)
 			},
 			MinVersion: tls.VersionTLS12,
 		},

@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto/ecdsa"
@@ -14,25 +14,15 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"thebasstoon.com/wgenrol/internal/config"
 )
 
-// bcrypt hash of the password "password" (matches testfiles/test_config.yaml).
+// bcrypt hash of the password "password" (matches testdata/test_config.yaml).
 const testPasswordHash = "$2a$08$noE9l0k/bSRj0cyRaVsDsue4L2WEmHP9pHxfGOJ026xEttfFn3TFq"
 
 // validKey returns a syntactically valid (32-byte) WireGuard key in std base64.
 func validKey() string { return base64.StdEncoding.EncodeToString(make([]byte, 32)) }
-
-// writeConf writes a minimal [Interface] config plus the given peer block to a
-// temp file and returns its path.
-func writeConf(t *testing.T, peerBlock string) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "wg.conf")
-	conf := "[Interface]\nPrivateKey = " + validKey() + "\nAddress = 10.64.0.1/24\nListenPort = 51820\n\n" + peerBlock
-	if err := os.WriteFile(p, []byte(conf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
 
 // prefixes parses CIDR strings into a []netip.Prefix.
 func prefixes(ss ...string) []netip.Prefix {
@@ -44,9 +34,9 @@ func prefixes(ss ...string) []netip.Prefix {
 }
 
 // newLoginCtx builds a ServerContext with a single admin user (admin/"password").
-func newLoginCtx() *ServerContext {
-	ctx := &ServerContext{
-		Config:             &WgEnrolConfig{},
+func newLoginCtx() *config.ServerContext {
+	ctx := &config.ServerContext{
+		Config:             &config.WgEnrolConfig{},
 		ValidSessionTokens: map[string]time.Time{},
 	}
 	ctx.Config.Admin.Users = map[string]string{"admin": testPasswordHash}
@@ -55,16 +45,16 @@ func newLoginCtx() *ServerContext {
 
 // tempCertPair copies the repo's test cert/key into a temp dir and returns a
 // ServerContext pointed at the copies, plus the two paths.
-func tempCertPair(t *testing.T) (*ServerContext, string, string) {
+func tempCertPair(t *testing.T) (*config.ServerContext, string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")
 	keyPath := filepath.Join(dir, "key.pem")
-	cb, err := os.ReadFile(filepath.Join("testfiles", "test_cert.pem"))
+	cb, err := os.ReadFile(filepath.Join("..", "..", "testdata", "test_cert.pem"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	kb, err := os.ReadFile(filepath.Join("testfiles", "test_key.pem"))
+	kb, err := os.ReadFile(filepath.Join("..", "..", "testdata", "test_key.pem"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +64,7 @@ func tempCertPair(t *testing.T) (*ServerContext, string, string) {
 	if err := os.WriteFile(keyPath, kb, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx := &ServerContext{Config: &WgEnrolConfig{}}
+	ctx := &config.ServerContext{Config: &config.WgEnrolConfig{}}
 	ctx.Config.Server.Tls.CertFile = &certPath
 	ctx.Config.Server.Tls.KeyFile = &keyPath
 	return ctx, certPath, keyPath

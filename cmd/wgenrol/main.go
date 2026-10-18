@@ -3,6 +3,9 @@ package main
 import (
 	"flag"
 	"log"
+
+	"thebasstoon.com/wgenrol/internal/config"
+	"thebasstoon.com/wgenrol/internal/server"
 )
 
 func main() {
@@ -11,11 +14,11 @@ func main() {
 	if len(*configPathPtr) == 0 {
 		log.Fatal("-config parameter is mandatory")
 	}
-	ctx, err := ParseConfigFile(*configPathPtr)
+	ctx, err := config.ParseConfigFile(*configPathPtr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := ctx.ApplyDeviceConfig(); err != nil {
+	if err := ctx.ConfFile.ApplyDeviceConfig(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -25,5 +28,5 @@ func main() {
 	} else {
 		log.Printf("Listening HTTP on %s\n", *ctx.Config.Server.ListenOn)
 	}
-	listenAndServe(ctx)
+	server.ListenAndServe(ctx)
 }

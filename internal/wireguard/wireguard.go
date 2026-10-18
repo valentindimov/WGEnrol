@@ -1,4 +1,4 @@
-package main
+package wireguard
 
 import (
 	"encoding/base64"
@@ -27,9 +27,10 @@ type WgConf struct {
 	filePath string
 	file     *ini.File
 	Peers    map[string]WgPeer
+	ifname   string
 }
 
-func (peer *WgPeer) validate() error {
+func (peer *WgPeer) Validate() error {
 	_, err := DecodeWireguardKey(peer.Pubkey)
 	if err != nil {
 		return err
@@ -46,7 +47,7 @@ func (peer *WgPeer) validate() error {
 	return nil
 }
 
-func loadWgConf(filePathIn string) (*WgConf, error) {
+func LoadWgConf(filePathIn string, ifname string) (*WgConf, error) {
 	// Step 1: Load INI file
 	options := ini.LoadOptions{
 		AllowNonUniqueSections:     true,
@@ -124,7 +125,7 @@ func loadWgConf(filePathIn string) (*WgConf, error) {
 					AllowedIps:   allowedIPs,
 					Comment:      comment,
 				}
-				if err := peer.validate(); err != nil {
+				if err := peer.Validate(); err != nil {
 					return nil, fmt.Errorf("Invalid peer %s: %s", peer.Pubkey, err.Error())
 				}
 				// Construct the peer object
@@ -206,14 +207,14 @@ func (peer WgPeer) allowedIpsAsNetList() []net.IPNet {
 	return result
 }
 
-func (ctx *ServerContext) ApplyDeviceConfig() error {
+func (ctx *WgConf) ApplyDeviceConfig() error {
 	wgClient, err := wgctrl.New()
 	if err != nil {
 		return err
 	}
 	defer wgClient.Close()
-	newPeers := make([]wgtypes.PeerConfig, 0, len(ctx.ConfFile.Peers))
-	for _, peer := range ctx.ConfFile.Peers {
+	newPeers := make([]wgtypes.PeerConfig, 0, len(ctx.Peers))
+	for _, peer := range ctx.Peers {
 		pubkey, err := DecodeWireguardKey(peer.Pubkey)
 		if err != nil {
 			return err
@@ -234,7 +235,7 @@ func (ctx *ServerContext) ApplyDeviceConfig() error {
 			AllowedIPs:        peer.allowedIpsAsNetList(),
 		})
 	}
-	if err := wgClient.ConfigureDevice(*ctx.Config.Wireguard.Ifname, wgtypes.Config{
+	if err := wgClient.ConfigureDevice(ctx.ifname, wgtypes.Config{
 		ReplacePeers: true,
 		Peers:        newPeers,
 	}); err != nil {
@@ -243,11 +244,11 @@ func (ctx *ServerContext) ApplyDeviceConfig() error {
 	return nil
 }
 
-func (ctx *ServerContext) Commit() error {
+func (ctx *WgConf) Commit() error {
 	// Edit the INI file with the contents of the peers map
-	ctx.ConfFile.file.DeleteSection("Peer")
-	for _, peer := range ctx.ConfFile.Peers {
-		sec, err := ctx.ConfFile.file.NewSection("Peer")
+	ctx.file.DeleteSection("Peer")
+	for _, peer := range ctx.Peers {
+		sec, err := ctx.file.NewSection("Peer")
 		if err != nil {
 			return err
 		}
@@ -278,10 +279,10 @@ func (ctx *ServerContext) Commit() error {
 	}
 	// If the apply was successful, save the INI file.
 	// FIXME: The transaction / failure handling could be better here, but I'll be rewriting the backing store anyway, so this is fine for now.
-	return atomicSaveIniFile(ctx.ConfFile.file, ctx.ConfFile.filePath)
+	return atomicSaveIniFile(ctx.file, ctx.filePath)
 }
 
-func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
+func (ctx *WgConf) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
 	deviceNets, err := ctx.GetDeviceNets()
 	if err != nil {
 		return nil, err
@@ -301,7 +302,7 @@ func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
 			if slices.Contains(deviceIPs, ip) {
 				continue ipSearchLoop
 			}
-			for _, peer := range ctx.ConfFile.Peers {
+			for _, peer := range ctx.Peers {
 				for _, peerNet := range peer.AllowedIps {
 					if peerNet.Contains(ip) {
 						continue ipSearchLoop
@@ -319,13 +320,13 @@ func (ctx *ServerContext) FindSuitableAllowedIPs() ([]netip.Prefix, error) {
 	return ips, nil
 }
 
-func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
+func (ctx *WgConf) GetDevicePubkey() (*string, error) {
 	wgClient, err := wgctrl.New()
 	if err != nil {
 		return nil, err
 	}
 	defer wgClient.Close()
-	device, err := wgClient.Device(*ctx.Config.Wireguard.Ifname)
+	device, err := wgClient.Device(ctx.ifname)
 	if err != nil {
 		return nil, err
 	}
@@ -333,30 +334,13 @@ func (ctx *ServerContext) GetDevicePubkey() (*string, error) {
 	return &result, nil
 }
 
-// func countLeadingOnes(input []byte) uint {
-// 	var result uint
-// 	result = 0
-// 	for _, b := range input {
-// 		if b == 255 {
-// 			result += 8
-// 			continue
-// 		}
-// 		for b&128 != 0 {
-// 			result += 1
-// 			b = (b & 127) << 1
-// 		}
-// 		break
-// 	}
-// 	return result
-// }
-
-func (ctx *ServerContext) GetDeviceNets() (*[]netip.Prefix, error) {
+func (ctx *WgConf) GetDeviceNets() (*[]netip.Prefix, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
 	}
 	for _, iface := range ifaces {
-		if iface.Name == *ctx.Config.Wireguard.Ifname {
+		if iface.Name == ctx.ifname {
 			resultNets := make([]netip.Prefix, 0, len(ifaces))
 			ifaceAddrs, err := iface.Addrs()
 			if err != nil {
@@ -385,5 +369,5 @@ func (ctx *ServerContext) GetDeviceNets() (*[]netip.Prefix, error) {
 			return &resultNets, nil
 		}
 	}
-	return nil, fmt.Errorf("Interface %s not found.", *ctx.Config.Wireguard.Ifname)
+	return nil, fmt.Errorf("Interface %s not found.", ctx.ifname)
 }

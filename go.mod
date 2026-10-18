@@ -1,4 +1,4 @@
-module thebasstoon.com/wgpeermgr
+module thebasstoon.com/wgenrol
 
 go 1.26.4
 
